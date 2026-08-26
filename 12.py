@@ -15,15 +15,19 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
     try:
-        df = conn.read(ttl="0m")
+        df = conn.read(worksheet="Sheet1", ttl="0m")
         if df is None or df.empty:
             return pd.DataFrame()
-        return df
+        return df.dropna(how="all")
     except Exception:
         return pd.DataFrame()
 
 def save_data(df):
-    conn.update(data=df)
+    try:
+        conn.update(worksheet="Sheet1", data=df)
+    except Exception:
+        # اگر برگه هنوز ساخته نشده باشد، آن را ایجاد و ذخیره می‌کند
+        conn.create(worksheet="Sheet1", data=df)
 
 def generate_trade_id():
     now = datetime.datetime.now()
