@@ -41,6 +41,8 @@ def get_worksheet():
     except Exception:
         return sh.get_worksheet(0)
 
+# کش کردن هوشمند جهت جلوگیری از خطای سقف درخواست 429
+@st.cache_data(ttl=60)
 def load_data():
     try:
         ws = get_worksheet()
@@ -63,6 +65,8 @@ def save_data(df):
         all_data = [header] + rows
         ws.clear()
         ws.update(range_name="A1", values=all_data)
+        # پاک‌سازی کش تا تغییرات فوراً نمایش داده شوند
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"خطا در ذخیره‌سازی ابری: {e}")
 
@@ -96,15 +100,6 @@ tab1, tab2, tab3 = st.tabs(
 # TAB 1: ADD / EDIT ANALYSIS & TRADE
 # =========================================================
 with tab1:
-    # دکمه تست اتصال مستقیم به گوگل شیت
-    if st.button("🧪 تست اتصال به گوگل‌شیت"):
-        try:
-            ws = get_worksheet()
-            st.success(f"✅ اتصال موفقیت‌آمیز بود! نام برگه: {ws.title}")
-            ws.update(range_name="A1", values=[["Test_ID", "Status"], ["TRD-001", "Connected"]])
-            st.success("✅ نوشتن تستی در خانه A1 با موفقیت انجام شد.")
-        except Exception as err:
-            st.error(f"❌ خطا در اتصال یا نوشتن: {type(err).__name__} - {err}")
     st.title("🎯 آنالیز و ثبت معامله جدید (نسخه ۴ - استاندارد ۱۰۰ امتیازی)")
     st.caption("سیستم هوشمند ارزیابی و آنالیز زون‌های معاملاتی (ذخیره‌سازی ابری)")
 
