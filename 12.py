@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- تنظیمات صفحه ---
 st.set_page_config(
@@ -10,31 +11,53 @@ st.set_page_config(
     layout="wide",
 )
 
-# اتصال به دیتابیس ابری گوگل‌شیت
-conn = st.connection("gsheets", type=GSheetsConnection)
+# ایجاد اتصال مستقیم و مطمئن به Google Sheets با gspread
+@st.cache_resource
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # خواندن اطلاعات امنیتی از Secrets
+    credentials_dict = dict(st.secrets["connections"]["gsheets"])
+    # تصحیح کاراکترهای خط جدید در کلید خصوصی
+    if "private_key" in credentials_dict:
+        credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n", "\n")
+    
+    creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
+    return gspread.authorize(creds)
+
+def get_worksheet():
+    gc = get_gspread_client()
+    sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+    sh = gc.open_by_url(sheet_url)
+    try:
+        return sh.worksheet("Sheet1")
+    except gspread.exceptions.WorksheetNotFound:
+        return sh.get_worksheet(0)
 
 def load_data():
     try:
-        df = conn.read(worksheet="Sheet1", ttl="0m")
-        if df is None or df.empty:
+        ws = get_worksheet()
+        data = ws.get_all_records()
+        if not data:
             return pd.DataFrame()
-        return df.dropna(how="all")
-    except Exception:
+        return pd.DataFrame(data)
+    except Exception as e:
         return pd.DataFrame()
 
 def save_data(df):
     try:
-        conn.update(worksheet="Sheet1", data=df)
-    except Exception:
-        # اگر برگه هنوز ساخته نشده باشد، آن را ایجاد و ذخیره می‌کند
-        conn.create(worksheet="Sheet1", data=df)
-
-def generate_trade_id():
-    now = datetime.datetime.now()
-    return f"TRD-{now.strftime('%Y%m%d-%H%M%S')}"
-
-if "current_trade_id" not in st.session_state:
-    st.session_state["current_trade_id"] = generate_trade_id()
+        ws = get_worksheet()
+        # پر کردن مقادیر خالی به صورت رشته خالی
+        df_clean = df.fillna("")
+        # تبدیل انواع داده به فرمت قابل سریال‌سازی برای گوگل‌شیت
+        df_clean = df_clean.astype(str)
+        # ثبت هدرها و داده‌ها در شیت
+        ws.clear()
+        ws.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
+    except Exception as e:
+        st.error(f"خطا در ذخیره‌سازی ابری: {e}")
 
 # CSS سفارشی
 st.markdown(
