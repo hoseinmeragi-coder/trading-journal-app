@@ -11,19 +11,21 @@ st.set_page_config(
     layout="wide",
 )
 
-# ایجاد اتصال مستقیم و مطمئن به Google Sheets با gspread
+# تابع ساخت شناسه یکتا
+def generate_trade_id():
+    now = datetime.datetime.now()
+    return f"TRD-{now.strftime('%Y%m%d-%H%M%S')}"
+
+# اتصال به دیتابیس ابری گوگل‌شیت
 @st.cache_resource
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # خواندن اطلاعات امنیتی از Secrets
     credentials_dict = dict(st.secrets["connections"]["gsheets"])
-    # تصحیح کاراکترهای خط جدید در کلید خصوصی
     if "private_key" in credentials_dict:
         credentials_dict["private_key"] = credentials_dict["private_key"].replace("\\n", "\n")
-    
     creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
     return gspread.authorize(creds)
 
@@ -43,23 +45,20 @@ def load_data():
         if not data:
             return pd.DataFrame()
         return pd.DataFrame(data)
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 def save_data(df):
     try:
         ws = get_worksheet()
-        # پر کردن مقادیر خالی به صورت رشته خالی
         df_clean = df.fillna("")
-        # تبدیل انواع داده به فرمت قابل سریال‌سازی برای گوگل‌شیت
         df_clean = df_clean.astype(str)
-        # ثبت هدرها و داده‌ها در شیت
         ws.clear()
         ws.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
     except Exception as e:
         st.error(f"خطا در ذخیره‌سازی ابری: {e}")
 
-# CSS سفارشی
+# استایل اختصاصی
 st.markdown(
     """
     <style>
@@ -91,6 +90,9 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.title("🎯 آنالیز و ثبت معامله جدید (نسخه ۴ - استاندارد ۱۰۰ امتیازی)")
     st.caption("سیستم هوشمند ارزیابی و آنالیز زون‌های معاملاتی (ذخیره‌سازی ابری)")
+
+    if "current_trade_id" not in st.session_state:
+        st.session_state["current_trade_id"] = generate_trade_id()
 
     loaded_data = {}
     df_all = load_data()
@@ -132,10 +134,8 @@ with tab1:
                 if st.session_state["current_trade_id"] == loaded_data.get("Trade ID"):
                     st.session_state["current_trade_id"] = generate_trade_id()
 
-   col_id, col_sym, col_dir = st.columns(3)
+    col_id, col_sym, col_dir = st.columns(3)
     with col_id:
-        if "current_trade_id" not in st.session_state:
-            st.session_state["current_trade_id"] = generate_trade_id()
         trade_id_val = st.session_state["current_trade_id"]
         st.text_input("شناسه معامله (Trade ID):", value=trade_id_val, disabled=True)
     with col_sym:
