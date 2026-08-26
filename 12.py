@@ -352,7 +352,7 @@ with tab1:
         htf_struct_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("رونددار و با گام‌های حرکتی قوی (Trending)", 8), "2": ("در محدوده فشرده و رنج (Ranging)", 2)}
         htf_struct_sel = st.selectbox("۲.۴. وضعیت حرکت تایم بالا (Trend/Range)؟", list(htf_struct_opts.keys()), index=get_index_by_val(htf_struct_opts, loaded_data.get("2.4 Vaziyaat HTF (Trend/Range)")), format_func=lambda x: htf_struct_opts[x][0])
         score_m2 += htf_struct_opts[htf_struct_sel][1]
-        details["2.4 Vaziyaat HTF (Trend/Range)"] = htf_struct_opts[htf_struct_opts[htf_struct_sel][0]] if htf_struct_sel in htf_struct_opts else ""
+        details["2.4 Vaziyaat HTF (Trend/Range)"] = htf_struct_opts[htf_struct_sel][0]
 
     # =========================================================
     # MARHALE 3: APPROACH & PRE-ENTRY LIQUIDITY
