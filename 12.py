@@ -132,8 +132,10 @@ with tab1:
                 if st.session_state["current_trade_id"] == loaded_data.get("Trade ID"):
                     st.session_state["current_trade_id"] = generate_trade_id()
 
-    col_id, col_sym, col_dir = st.columns(3)
+   col_id, col_sym, col_dir = st.columns(3)
     with col_id:
+        if "current_trade_id" not in st.session_state:
+            st.session_state["current_trade_id"] = generate_trade_id()
         trade_id_val = st.session_state["current_trade_id"]
         st.text_input("شناسه معامله (Trade ID):", value=trade_id_val, disabled=True)
     with col_sym:
