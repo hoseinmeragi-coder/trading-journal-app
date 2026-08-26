@@ -31,20 +31,25 @@ def get_gspread_client():
 
 def get_worksheet():
     gc = get_gspread_client()
-    sheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
-    sh = gc.open_by_url(sheet_url)
+    sheet_target = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
+    if sheet_target.startswith("http"):
+        sh = gc.open_by_url(sheet_target)
+    else:
+        sh = gc.open_by_key(sheet_target)
     try:
         return sh.worksheet("Sheet1")
-    except gspread.exceptions.WorksheetNotFound:
+    except Exception:
         return sh.get_worksheet(0)
 
 def load_data():
     try:
         ws = get_worksheet()
-        data = ws.get_all_records()
-        if not data:
+        values = ws.get_all_values()
+        if not values or len(values) < 2:
             return pd.DataFrame()
-        return pd.DataFrame(data)
+        # سطر اول به عنوان هدر و بقیه به عنوان دیتا
+        df = pd.DataFrame(values[1:], columns=values[0])
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -53,8 +58,11 @@ def save_data(df):
         ws = get_worksheet()
         df_clean = df.fillna("")
         df_clean = df_clean.astype(str)
+        header = df_clean.columns.tolist()
+        rows = df_clean.values.tolist()
+        all_data = [header] + rows
         ws.clear()
-        ws.update([df_clean.columns.values.tolist()] + df_clean.values.tolist())
+        ws.update(range_name="A1", values=all_data)
     except Exception as e:
         st.error(f"خطا در ذخیره‌سازی ابری: {e}")
 
@@ -112,7 +120,7 @@ with tab1:
         if not draft_trades.empty:
             st.info("📌 تحلیل‌های نیمه‌کاره قبلی (پیش‌نویس) یافت شد.")
             draft_dict = {
-                f"[{idx}] شناسه: {row['Trade ID']} | نماد: {row['Namad']} | جهت: {row.get('Jahat (Buy/Sell)', '')} | ساعت: {row.get('Saate Candle/Zone', '')}": idx
+                f"[{idx}] شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | جهت: {row.get('Jahat (Buy/Sell)', '')} | ساعت: {row.get('Saate Candle/Zone', '')}": idx
                 for idx, row in draft_trades.iterrows()
             }
             draft_options = ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys())
@@ -127,8 +135,8 @@ with tab1:
                 if selected_draft != "-- ایجاد تحلیل جدید --":
                     if st.button("🗑️ حذف این تحلیل", use_container_width=True):
                         del_idx = draft_dict[selected_draft]
-                        target_del_id = df_all.loc[del_idx, "Trade ID"]
-                        df_all = df_all[df_all["Trade ID"] != target_del_id]
+                        target_del_id = df_all.loc[del_idx].get("Trade ID", "")
+                        df_all = df_all[df_all.get("Trade ID", "") != target_del_id]
                         save_data(df_all)
                         if st.session_state.get("current_trade_id") == target_del_id:
                             st.session_state["current_trade_id"] = generate_trade_id()
@@ -603,7 +611,7 @@ with tab2:
         else:
             st.subheader("📋 لیست معاملات باز")
             trades_dict = {
-                f"[{idx}] شناسه: {row['Trade ID']} | نماد: {row['Namad']} | جهت: {row.get('Jahat (Buy/Sell)', '')} | تاریخ: {row['Tarikh']}": idx
+                f"[{idx}] شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | جهت: {row.get('Jahat (Buy/Sell)', '')} | تاریخ: {row.get('Tarikh', '')}": idx
                 for idx, row in open_trades.iterrows()
             }
             selected_trade_str = st.selectbox("شماره ردیف معامله مورد نظر:", options=list(trades_dict.keys()))
@@ -658,6 +666,12 @@ with tab3:
     if df.empty or "Vaziyat" not in df.columns:
         st.info("ℹ️ هنوز هیچ معامله‌ای ثبت نشده است.")
     else:
+        # تبدیل ستون‌های عددی جهت محاسبات آماری
+        if "Natijeh (PnL $)" in df.columns:
+            df["Natijeh (PnL $)"] = pd.to_numeric(df["Natijeh (PnL $)"], errors="coerce").fillna(0.0)
+        if "R:R Vaghei" in df.columns:
+            df["R:R Vaghei"] = pd.to_numeric(df["R:R Vaghei"], errors="coerce").fillna(0.0)
+
         closed_trades = df[df["Vaziyat"] == "Baste-shode (Closed)"]
         canceled_trades = len(df[df["Vaziyat"] == "Laghv-shode (Canceled/Missed)"])
 
