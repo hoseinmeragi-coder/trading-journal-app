@@ -346,55 +346,69 @@ with tab1:
                 details["1.6 Tadaome Harakat Ba'ad Candle"] = cfollow_opts[cfollow_sel][0]
 
     # =========================================================
-    # MARHALE 2: TIMEFRAME & HTF CONTEXT
-    # =========================================================
-    st.markdown("---")
-    st.subheader("📌 مرحله ۲: قفل تایم‌فریم و کانتکست تایم بالا HTF (حداکثر ۴۰ امتیاز)")
+# TAB 2: UPDATE CLOSED TRADE
+# =========================================================
+with tab2:
+    st.title("📝 ثبت خروج، حد سود و مدیریت پوزیشن")
+    df = load_data()
 
-    tf_options = {
-        "0": ("-- انتخاب نشده --", "NONE"),
-        "1": ("روزانه (HTF: هفتگی | LTF: ۴ ساعته)", "1D"),
-        "2": ("۴ ساعته (HTF: روزانه | LTF: ۱ ساعته)", "4H"),
-        "3": ("۱ ساعته (HTF: ۴ ساعته | LTF: ۱۵ دقیقه)", "1H"),
-        "4": ("۱۵ دقیقه (HTF: ۱ ساعته | LTF: ۳/۵ دقیقه)", "15M"),
-    }
+    if df.empty or "Vaziyat" not in df.columns:
+        st.info("ℹ️ هنوز هیچ دیتایی در ژورنال ثبت نشده است.")
+    else:
+        open_trades = df[df["Vaziyat"] == "Baz (Open)"]
+        if open_trades.empty:
+            st.success("✅ هیچ معامله بازی برای بستن وجود ندارد.")
+        else:
+            st.subheader("📋 لیست معاملات باز")
+            trades_dict = {
+                f"[{idx}] شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | جهت: {row.get('Jahat (Buy/Sell)', '')} | تاریخ: {row.get('Tarikh', '')}": idx
+                for idx, row in open_trades.iterrows()
+            }
+            selected_trade_str = st.selectbox("شماره ردیف معامله مورد نظر:", options=list(trades_dict.keys()))
+            selected_idx = trades_dict[selected_trade_str]
 
-    col_m2_1, col_m2_2 = st.columns(2)
-    with col_m2_1:
-        tf_default_idx = 0
-        loaded_tf = loaded_data.get("Timeframe Zone (MTF)")
-        if loaded_tf and pd.notna(loaded_tf):
-            for idx, (k, v) in enumerate(tf_options.items()):
-                if v[1] == loaded_tf:
-                    tf_default_idx = idx
-                    break
+            st.markdown("---")
+            status_opts = {"1": ("بسته‌شده با سود یا زیان (Closed Trade)", "CLOSED"), "2": ("لغوشده / نرسیده به نقطه ورود", "CANCELED")}
+            status_sel = st.radio("وضعیت نهایی معامله:", list(status_opts.keys()), format_func=lambda x: status_opts[x][0])
+            status_code = status_opts[status_sel][1]
 
-        tf_sel = st.selectbox("تایم‌فریم اصلی زون (MTF) را انتخاب کنید:", list(tf_options.keys()), index=tf_default_idx, format_func=lambda x: tf_options[x][0])
-        mtf = tf_options[tf_sel][1]
-        details["Timeframe Zone (MTF)"] = mtf
+            if status_code == "CANCELED":
+                if st.button("ثبت لغو معامله", use_container_width=True):
+                    # تبدیل موقت به دیکشنری یا ست کردن ایمن
+                    df = df.astype(object)
+                    df.loc[selected_idx, "Vaziyat"] = "Laghv-shode (Canceled/Missed)"
+                    df.loc[selected_idx, "Noe TP / Khorooj"] = "Nareside be Entry"
+                    df.loc[selected_idx, "Natijeh (PnL $)"] = "0.0"
+                    df.loc[selected_idx, "R:R Vaghei"] = "0.0"
+                    save_data(df)
+                    st.warning("❌ معامله لغو شد.")
+                    st.rerun()
+            else:
+                exit_opts = {
+                    "1": ("حد سود اول / خروج اسکالپ (۵۰٪ نقد + ریسک‌فری)", "TP1_SCALP"),
+                    "2": ("حد سود دوم / تارگت اصلی (زون مقابل MTF)", "TP2_MAIN"),
+                    "3": ("حد سود سوم / تارگت رانر (سقف/کف تایم بالا)", "TP3_RUNNER"),
+                    "4": ("برخورد به حد ضرر (Stop Loss)", "SL_HIT"),
+                    "5": ("خروج سر‌به‌سر / ریسک‌فری (Break Even)", "BREAK_EVEN"),
+                }
+                exit_sel = st.selectbox("نوع خروج:", list(exit_opts.keys()), format_func=lambda x: exit_opts[x][0])
 
-        score_m2 = 0
-        htf_bias_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("بله، کاملاً هم‌جهت با روند تایم بالا (HTF)", 12), "2": ("خیر، معامله اصلاحی / خلاف روند تایم بالا", 0)}
-        htf_bias_sel = st.selectbox("۲.۱. هم‌جهتی با تایم بالا (HTF)؟", list(htf_bias_opts.keys()), index=get_index_by_val(htf_bias_opts, loaded_data.get("2.1 Ham-jehati ba HTF")), format_func=lambda x: htf_bias_opts[x][0])
-        score_m2 += htf_bias_opts[htf_bias_sel][1]
-        details["2.1 Ham-jehati ba HTF"] = htf_bias_opts[htf_bias_sel][0]
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    pnl_val = st.number_input("میزان سود یا زیان به دلار:", value=0.0, step=10.0)
+                with col_c2:
+                    rr_val = st.number_input("نسبت R:R به‌دست‌آمده:", value=0.0, step=0.1)
 
-        htf_curve_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("کاملاً مناسب و فاصله کافی (حداقل R:R ۱ به ۲)", 10), "2": ("نزدیک به زون مقابل تایم بالا (پرریسک)", 0)}
-        htf_curve_sel = st.selectbox("۲.۲. موقعیت زون روی منحنی و فاصله تا مانع HTF؟", list(htf_curve_opts.keys()), index=get_index_by_val(htf_curve_opts, loaded_data.get("2.2 Mogheiyat rooye Curve")), format_func=lambda x: htf_curve_opts[x][0])
-        score_m2 += htf_curve_opts[htf_curve_sel][1]
-        details["2.2 Mogheiyat rooye Curve"] = htf_curve_opts[htf_curve_sel][0]
-
-    with col_m2_2:
-        htf_power_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("لگ‌های موافق قوی و اصلاح‌ها کوتاه/ضعیف", 10), "2": ("اصلاح‌ها عمیق و حرکت در حال ضعیف شدن", 3)}
-        htf_power_sel = st.selectbox("۲.۳. موازنه قدرت و مقایسه لگ‌ها و کندل‌ها؟", list(htf_power_opts.keys()), index=get_index_by_val(htf_power_opts, loaded_data.get("2.3 Movazene Ghodrat Lag-ha")), format_func=lambda x: htf_power_opts[x][0])
-        score_m2 += htf_power_opts[htf_power_sel][1]
-        details["2.3 Movazene Ghodrat Lag-ha"] = htf_power_opts[htf_power_sel][0]
-
-        htf_struct_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("رونددار و با گام‌های حرکتی قوی (Trending)", 8), "2": ("در محدوده فشرده و رنج (Ranging)", 2)}
-        htf_struct_sel = st.selectbox("۲.۴. وضعیت حرکت تایم بالا (Trend/Range)؟", list(htf_struct_opts.keys()), index=get_index_by_val(htf_struct_opts, loaded_data.get("2.4 Vaziyaat HTF (Trend/Range)")), format_func=lambda x: htf_struct_opts[x][0])
-        score_m2 += htf_struct_opts[htf_struct_sel][1]
-        details["2.4 Vaziyaat HTF (Trend/Range)"] = htf_struct_opts[htf_struct_sel][0]
-
+                if st.button("💾 ثبت نتیجه خروج", use_container_width=True):
+                    # اطمینان از تایپ دیتاسِت جهت جلوگیری از خطای ناسازگاری Arrow
+                    df = df.astype(object)
+                    df.loc[selected_idx, "Vaziyat"] = "Baste-shode (Closed)"
+                    df.loc[selected_idx, "Noe TP / Khorooj"] = exit_opts[exit_sel][0]
+                    df.loc[selected_idx, "Natijeh (PnL $)"] = str(pnl_val)
+                    df.loc[selected_idx, "R:R Vaghei"] = str(rr_val)
+                    save_data(df)
+                    st.success("✅ نتیجه معامله در ابر ثبت شد.")
+                    st.rerun()
     # =========================================================
     # MARHALE 3: APPROACH & PRE-ENTRY LIQUIDITY
     # =========================================================
