@@ -547,7 +547,11 @@ with tab1:
         st.markdown("---")
         st.subheader("💰 ورود به پوزیشن (محاسبه حجم معامله)")
 
-        saved_balance = float(loaded_data.get("Balance", 10000.0)) if pd.notna(loaded_data.get("Balance")) else 10000.0
+        raw_balance = loaded_data.get("Balance", "")
+        try:
+            saved_balance = float(raw_balance) if raw_balance != "" and pd.notna(raw_balance) else 10000.0
+        except (ValueError, TypeError):
+            saved_balance = 10000.0
 
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
