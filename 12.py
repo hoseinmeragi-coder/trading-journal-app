@@ -85,7 +85,7 @@ st.markdown(
 )
 
 # =========================================================
-# DATABASE & GOOGLE SHEETS HELPERS (BULLET-PROOF UPSERT)
+# DATABASE & GOOGLE SHEETS HELPERS (CACHED & OPTIMIZED)
 # =========================================================
 def generate_trade_id():
     now = datetime.datetime.now()
@@ -103,7 +103,9 @@ def get_gspread_client():
     creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
     return gspread.authorize(creds)
 
+@st.cache_resource
 def get_worksheet():
+    """کش کردن آبجکت ورک‌شیت برای جلوگیری از درخواست‌های مکرر متادیتا به گوگل"""
     gc = get_gspread_client()
     sheet_target = st.secrets["connections"]["gsheets"]["spreadsheet"].strip()
     sh = gc.open_by_url(sheet_target) if sheet_target.startswith("http") else gc.open_by_key(sheet_target)
@@ -112,8 +114,9 @@ def get_worksheet():
     except Exception:
         return sh.get_worksheet(0)
 
+@st.cache_data(ttl=60)
 def load_data():
-    """خواندن لحظه‌ای داده‌ها بدون خطر تداخل کَش در عملیات نوشتن"""
+    """کش کردن داده‌های دریافتی جهت جلوگیری از شکستن محدودیت ۶۰ درخواست در دقیقه"""
     try:
         ws = get_worksheet()
         values = ws.get_all_values()
@@ -126,19 +129,20 @@ def load_data():
 
 def upsert_trade(trade_record: dict):
     """
-    درج معامله جدید به عنوان سطر مستقل یا بروزرسانی سطر موجود صرفاً بر اساس تطابق Trade ID
+    درج معامله جدید یا بروزرسانی بر اساس Trade ID همراه با نوسازی کش Streamlit
     """
     try:
         ws = get_worksheet()
         values = ws.get_all_values()
         trade_id = str(trade_record.get("Trade ID", "")).strip()
 
-        # اگر شیت خالی است، هدر و اولین رکورد درج شود
+        # اگر شیت خالی است
         if not values or len(values) == 0:
             headers = list(trade_record.keys())
             row_data = [str(trade_record.get(h, "")) for h in headers]
             ws.append_row(headers)
             ws.append_row(row_data)
+            st.cache_data.clear()
             return True
 
         headers = values[0]
@@ -153,11 +157,10 @@ def upsert_trade(trade_record: dict):
         if headers_updated:
             ws.update(range_name="A1", values=[headers])
 
-        # پیدا کردن موقعیت ستون Trade ID
         if "Trade ID" not in headers:
             headers.insert(0, "Trade ID")
             ws.update(range_name="A1", values=[headers])
-        
+
         trade_col_idx = headers.index("Trade ID")
         existing_row_idx = None
 
@@ -169,13 +172,15 @@ def upsert_trade(trade_record: dict):
         ordered_values = [str(trade_record.get(h, "")) if trade_record.get(h) is not None else "" for h in headers]
 
         if existing_row_idx is not None:
-            # معامله از قبل موجود است: فقط همان سطر مشخص بروزرسانی شود
+            # بروزرسانی ردیف موجود
             end_col = gspread.utils.rowcol_to_a1(existing_row_idx, len(headers))
             ws.update(range_name=f"A{existing_row_idx}:{end_col}", values=[ordered_values])
         else:
-            # معامله جدید است: بدون دست زدن به ردیف‌های قبلی اضافه شود
+            # درج ردیف جدید
             ws.append_row(ordered_values)
 
+        # پاکسازی کش تا در رندر بعدی داده‌های جدید خوانده شوند
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"خطا در عملیات ثبت دیتابیس: {e}")
@@ -194,6 +199,7 @@ def delete_trade_by_id(trade_id: str):
         for row_num, row in enumerate(values[1:], start=2):
             if len(row) > trade_col_idx and str(row[trade_col_idx]).strip() == trade_id.strip():
                 ws.delete_rows(row_num)
+                st.cache_data.clear()
                 return True
         return False
     except Exception as e:
@@ -208,6 +214,11 @@ def get_index_by_val(d, target_val, default=0):
         if str(val_text).strip() == str(target_val).strip():
             return idx
     return default
+
+# =========================================================
+# GLOBAL DATA FETCH (صرفاً یک‌بار خواندن در هر اجرای اسکریپت)
+# =========================================================
+df_all = load_data()
 
 # =========================================================
 # TABS SETUP
@@ -230,7 +241,6 @@ with tab1:
     if "current_trade_id" not in st.session_state:
         st.session_state["current_trade_id"] = generate_trade_id()
 
-    df_all = load_data()
     loaded_data = {}
 
     if not df_all.empty and "Vaziyat" in df_all.columns:
@@ -712,12 +722,11 @@ with tab1:
 # =========================================================
 with tab2:
     st.markdown("### 📝 ثبت خروج و بستن موقعیت‌های معاملاتی")
-    df = load_data()
 
-    if df.empty or "Vaziyat" not in df.columns:
+    if df_all.empty or "Vaziyat" not in df_all.columns:
         st.info("داده‌ای یافت نشد.")
     else:
-        open_trades = df[df["Vaziyat"] == "Baz (Open)"]
+        open_trades = df_all[df_all["Vaziyat"] == "Baz (Open)"]
         if open_trades.empty:
             st.success("✅ در حال حاضر هیچ پوزیشن بازی وجود ندارد.")
         else:
@@ -774,12 +783,11 @@ with tab2:
 # =========================================================
 with tab3:
     st.markdown("### 📊 داشبورد تحلیل عملکرد و مدیریت حساب")
-    df = load_data()
 
-    if df.empty or "Vaziyat" not in df.columns:
+    if df_all.empty or "Vaziyat" not in df_all.columns:
         st.info("هنوز دیتایی برای تحلیل ثبت نشده است.")
     else:
-        df_calc = df.copy()
+        df_calc = df_all.copy()
         df_calc["Natijeh (PnL $)"] = pd.to_numeric(df_calc["Natijeh (PnL $)"], errors="coerce").fillna(0.0)
         df_calc["R:R Vaghei"] = pd.to_numeric(df_calc["R:R Vaghei"], errors="coerce").fillna(0.0)
 
@@ -895,4 +903,4 @@ with tab3:
 
             with st.container(border=True):
                 st.markdown("##### 📑 تاریخچه کامل داده‌ها")
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df_all, use_container_width=True)
