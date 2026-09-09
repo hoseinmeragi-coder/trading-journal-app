@@ -32,7 +32,6 @@ st.markdown(
         font-family: 'JetBrains Mono', 'Vazirmatn', monospace !important;
     }
 
-    /* Backgrounds and Cards */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background: #0e1117;
         border: 1px solid #1f2937 !important;
@@ -42,7 +41,6 @@ st.markdown(
         margin-bottom: 1rem;
     }
 
-    /* Metric Cards */
     div[data-testid="metric-container"] {
         background: #161b22;
         border: 1px solid #30363d;
@@ -51,7 +49,6 @@ st.markdown(
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     
-    /* Inputs Styling */
     .stTextInput input, .stNumberInput input, .stSelectbox select {
         background-color: #161b22 !important;
         color: #f0f6fc !important;
@@ -59,7 +56,6 @@ st.markdown(
         border-radius: 8px !important;
     }
 
-    /* Badges */
     .badge-grade {
         display: inline-block;
         padding: 6px 14px;
@@ -89,7 +85,7 @@ st.markdown(
 )
 
 # =========================================================
-# DATABASE & GOOGLE SHEETS HELPERS (SAFE UPSERT LOGIC)
+# DATABASE & GOOGLE SHEETS HELPERS (BULLET-PROOF UPSERT)
 # =========================================================
 def generate_trade_id():
     now = datetime.datetime.now()
@@ -116,68 +112,76 @@ def get_worksheet():
     except Exception:
         return sh.get_worksheet(0)
 
-@st.cache_data(ttl=30)
 def load_data():
+    """خواندن لحظه‌ای داده‌ها بدون خطر تداخل کَش در عملیات نوشتن"""
     try:
         ws = get_worksheet()
         values = ws.get_all_values()
         if not values or len(values) < 2:
             return pd.DataFrame()
-        return pd.DataFrame(values[1:], columns=values[0])
+        df = pd.DataFrame(values[1:], columns=values[0])
+        return df
     except Exception:
         return pd.DataFrame()
 
 def upsert_trade(trade_record: dict):
     """
-    بروزرسانی یا درج امن بر اساس Trade ID بدون استفاده از متد مخرب ws.clear()
+    درج معامله جدید به عنوان سطر مستقل یا بروزرسانی سطر موجود صرفاً بر اساس تطابق Trade ID
     """
     try:
         ws = get_worksheet()
         values = ws.get_all_values()
         trade_id = str(trade_record.get("Trade ID", "")).strip()
-        
+
+        # اگر شیت خالی است، هدر و اولین رکورد درج شود
         if not values or len(values) == 0:
             headers = list(trade_record.keys())
+            row_data = [str(trade_record.get(h, "")) for h in headers]
             ws.append_row(headers)
-            ws.append_row([str(trade_record.get(h, "")) for h in headers])
-            st.cache_data.clear()
+            ws.append_row(row_data)
             return True
 
         headers = values[0]
-        # افزودن ستون‌های جدید به انتهای هدر در صورت نبودن
-        updated_headers = list(headers)
+
+        # بررسی و افزودن کلیدهایی که در هدر فعلی وجود ندارند
+        headers_updated = False
         for k in trade_record.keys():
-            if k not in updated_headers:
-                updated_headers.append(k)
+            if k not in headers:
+                headers.append(k)
+                headers_updated = True
 
-        if updated_headers != headers:
-            ws.update(range_name="A1", values=[updated_headers])
-            headers = updated_headers
+        if headers_updated:
+            ws.update(range_name="A1", values=[headers])
 
-        trade_id_idx = headers.index("Trade ID") if "Trade ID" in headers else 0
-        existing_row_index = None
+        # پیدا کردن موقعیت ستون Trade ID
+        if "Trade ID" not in headers:
+            headers.insert(0, "Trade ID")
+            ws.update(range_name="A1", values=[headers])
+        
+        trade_col_idx = headers.index("Trade ID")
+        existing_row_idx = None
 
-        for idx, row in enumerate(values[1:], start=2):
-            if len(row) > trade_id_idx and str(row[trade_id_idx]).strip() == trade_id:
-                existing_row_index = idx
+        for row_num, row in enumerate(values[1:], start=2):
+            if len(row) > trade_col_idx and str(row[trade_col_idx]).strip() == trade_id:
+                existing_row_idx = row_num
                 break
 
-        ordered_row = [str(trade_record.get(col, "")) for col in headers]
+        ordered_values = [str(trade_record.get(h, "")) if trade_record.get(h) is not None else "" for h in headers]
 
-        if existing_row_index:
-            col_letter = gspread.utils.rowcol_to_a1(existing_row_index, len(headers))
-            ws.update(range_name=f"A{existing_row_index}:{col_letter}", values=[ordered_row])
+        if existing_row_idx is not None:
+            # معامله از قبل موجود است: فقط همان سطر مشخص بروزرسانی شود
+            end_col = gspread.utils.rowcol_to_a1(existing_row_idx, len(headers))
+            ws.update(range_name=f"A{existing_row_idx}:{end_col}", values=[ordered_values])
         else:
-            ws.append_row(ordered_row)
+            # معامله جدید است: بدون دست زدن به ردیف‌های قبلی اضافه شود
+            ws.append_row(ordered_values)
 
-        st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"خطا در همگام‌سازی ابری: {e}")
+        st.error(f"خطا در عملیات ثبت دیتابیس: {e}")
         return False
 
 def delete_trade_by_id(trade_id: str):
-    """حذف ردیف با تطابق دقیق شناسه معامله"""
     try:
         ws = get_worksheet()
         values = ws.get_all_values()
@@ -186,20 +190,16 @@ def delete_trade_by_id(trade_id: str):
         headers = values[0]
         if "Trade ID" not in headers:
             return False
-        t_idx = headers.index("Trade ID")
-        for r_idx, row in enumerate(values[1:], start=2):
-            if len(row) > t_idx and str(row[t_idx]).strip() == trade_id.strip():
-                ws.delete_rows(r_idx)
-                st.cache_data.clear()
+        trade_col_idx = headers.index("Trade ID")
+        for row_num, row in enumerate(values[1:], start=2):
+            if len(row) > trade_col_idx and str(row[trade_col_idx]).strip() == trade_id.strip():
+                ws.delete_rows(row_num)
                 return True
         return False
     except Exception as e:
-        st.error(f"خطا در حذف معامله: {e}")
+        st.error(f"خطا در حذف: {e}")
         return False
 
-# =========================================================
-# HELPER FUNCTIONS
-# =========================================================
 def get_index_by_val(d, target_val, default=0):
     if not target_val or pd.isna(target_val) or target_val == "-- انتخاب نشده --":
         return default
@@ -244,7 +244,7 @@ with tab1:
                 }
                 col_sel_draft, col_del_draft = st.columns([4, 1])
                 with col_sel_draft:
-                    selected_draft_label = st.selectbox("انتخاب پیش‌نویس جهت بارگذاری و ادامه:", ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys()))
+                    selected_draft_label = st.selectbox("انتخاب پیش‌نویس جهت بارگذاری و ویرایش:", ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys()))
                 
                 with col_del_draft:
                     st.write("")
@@ -253,16 +253,15 @@ with tab1:
                         if st.button("🗑️ حذف پیش‌نویس", use_container_width=True):
                             t_id = draft_dict[selected_draft_label]
                             delete_trade_by_id(t_id)
-                            if st.session_state.get("current_trade_id") == t_id:
-                                st.session_state["current_trade_id"] = generate_trade_id()
+                            st.session_state["current_trade_id"] = generate_trade_id()
                             st.success(f"پیش‌نویس {t_id} حذف شد.")
                             st.rerun()
 
                 if selected_draft_label != "-- ایجاد تحلیل جدید --":
                     chosen_id = draft_dict[selected_draft_label]
-                    matched_rows = df_all[df_all["Trade ID"] == chosen_id]
-                    if not matched_rows.empty:
-                        loaded_data = matched_rows.iloc[0].to_dict()
+                    matched = df_all[df_all["Trade ID"] == chosen_id]
+                    if not matched.empty:
+                        loaded_data = matched.iloc[0].to_dict()
                         st.session_state["current_trade_id"] = chosen_id
                 else:
                     if st.session_state["current_trade_id"] == loaded_data.get("Trade ID"):
@@ -658,7 +657,7 @@ with tab1:
 
                     if upsert_trade(details):
                         st.session_state["current_trade_id"] = generate_trade_id()
-                        st.success(f"پیش‌نویس {trade_id_val} با موفقیت ذخیره شد.")
+                        st.success(f"پیش‌نویس {trade_id_val} با موفقیت ثبت شد.")
                         st.rerun()
 
     # ---------------------------------------------------------
@@ -673,43 +672,40 @@ with tab1:
             except (ValueError, TypeError):
                 saved_balance = 10000.0
 
-            with st.form("trade_execution_form"):
-                col_p1, col_p2, col_p3 = st.columns(3)
-                with col_p1:
-                    balance = st.number_input("بالانس حساب ($):", min_value=1.0, value=saved_balance, step=100.0)
-                with col_p2:
-                    sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip):", min_value=0.1, value=15.0, step=1.0)
-                with col_p3:
-                    pip_val = st.number_input("ارزش هر پیپ برای ۱ لات ($):", min_value=0.01, value=10.0, step=0.5)
+            col_p1, col_p2, col_p3 = st.columns(3)
+            with col_p1:
+                balance = st.number_input("بالانس حساب ($):", min_value=1.0, value=saved_balance, step=100.0)
+            with col_p2:
+                sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip):", min_value=0.1, value=15.0, step=1.0)
+            with col_p3:
+                pip_val = st.number_input("ارزش هر پیپ برای ۱ لات ($):", min_value=0.01, value=10.0, step=0.5)
 
-                risk_amount = balance * (risk_pct / 100)
-                lot_size = ((risk_amount / (sl_pips * pip_val)) if sl_pips > 0 and risk_pct > 0 and pip_val > 0 else 0.0)
+            risk_amount = balance * (risk_pct / 100)
+            lot_size = ((risk_amount / (sl_pips * pip_val)) if sl_pips > 0 and risk_pct > 0 and pip_val > 0 else 0.0)
 
-                col_m_lot, col_m_risk = st.columns(2)
-                col_m_lot.metric("حجم مجاز معامله", f"{round(lot_size, 2)} Lot")
-                col_m_risk.metric("میزان سرمایه در ریسک", f"${risk_amount:.2f}")
+            col_m_lot, col_m_risk = st.columns(2)
+            col_m_lot.metric("حجم مجاز معامله", f"{round(lot_size, 2)} Lot")
+            col_m_risk.metric("میزان سرمایه در ریسک", f"${risk_amount:.2f}")
 
-                submit_trade = st.form_submit_button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True)
+            if st.button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True):
+                if not symbol:
+                    st.error("❌ نماد معامله را مشخص کنید.")
+                else:
+                    details["Balance"] = balance
+                    details["Emtiyaze 3 Marhale"] = total_score_3m
+                    details["Grade"] = grade
+                    details["Darsade Risk"] = f"{risk_pct}%"
+                    details["Risk ($)"] = round(risk_amount, 2)
+                    details["Hajm (Lot)"] = round(lot_size, 2)
+                    details["Vaziyat"] = "Baz (Open)"
+                    details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
+                    details["Natijeh (PnL $)"] = ""
+                    details["R:R Vaghei"] = ""
 
-                if submit_trade:
-                    if not symbol:
-                        st.error("❌ نماد معامله را مشخص کنید.")
-                    else:
-                        details["Balance"] = balance
-                        details["Emtiyaze 3 Marhale"] = total_score_3m
-                        details["Grade"] = grade
-                        details["Darsade Risk"] = f"{risk_pct}%"
-                        details["Risk ($)"] = round(risk_amount, 2)
-                        details["Hajm (Lot)"] = round(lot_size, 2)
-                        details["Vaziyat"] = "Baz (Open)"
-                        details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
-                        details["Natijeh (PnL $)"] = ""
-                        details["R:R Vaghei"] = ""
-
-                        if upsert_trade(details):
-                            st.session_state["current_trade_id"] = generate_trade_id()
-                            st.success(f"پوزیشن {trade_id_val} با موفقیت ثبت شد.")
-                            st.rerun()
+                    if upsert_trade(details):
+                        st.session_state["current_trade_id"] = generate_trade_id()
+                        st.success(f"پوزیشن {trade_id_val} با موفقیت ثبت شد.")
+                        st.rerun()
 
 # =========================================================
 # TAB 2: UPDATE CLOSED TRADE
@@ -749,31 +745,29 @@ with tab2:
                             st.warning(f"پوزیشن {target_trade_id} لغو شد.")
                             st.rerun()
                 else:
-                    with st.form("close_trade_form"):
-                        exit_opts = {
-                            "1": ("🎯 حد سود اول / خروج اسکالپ (۵۰٪ نقد + ریسک‌فری)", "TP1_SCALP"),
-                            "2": ("🎯 حد سود دوم / تارگت اصلی (زون مقابل MTF)", "TP2_MAIN"),
-                            "3": ("🎯 حد سود سوم / تارگت رانر (سقف/کف تایم بالا)", "TP3_RUNNER"),
-                            "4": ("🛑 برخورد به حد ضرر (Stop Loss)", "SL_HIT"),
-                            "5": ("⚖️ خروج سر‌به‌سر / ریسک‌فری (Break Even)", "BREAK_EVEN"),
-                        }
-                        exit_sel = st.selectbox("دلیل و نحوه خروج:", list(exit_opts.keys()), format_func=lambda x: exit_opts[x][0])
+                    exit_opts = {
+                        "1": ("🎯 حد سود اول / خروج اسکالپ (۵۰٪ نقد + ریسک‌فری)", "TP1_SCALP"),
+                        "2": ("🎯 حد سود دوم / تارگت اصلی (زون مقابل MTF)", "TP2_MAIN"),
+                        "3": ("🎯 حد سود سوم / تارگت رانر (سقف/کف تایم بالا)", "TP3_RUNNER"),
+                        "4": ("🛑 برخورد به حد ضرر (Stop Loss)", "SL_HIT"),
+                        "5": ("⚖️ خروج سر‌به‌سر / ریسک‌فری (Break Even)", "BREAK_EVEN"),
+                    }
+                    exit_sel = st.selectbox("دلیل و نحوه خروج:", list(exit_opts.keys()), format_func=lambda x: exit_opts[x][0])
 
-                        col_c1, col_c2 = st.columns(2)
-                        with col_c1:
-                            pnl_val = st.number_input("سود / زیان دلاری (PnL $):", value=0.0, step=10.0)
-                        with col_c2:
-                            rr_val = st.number_input("نسبت ریسک به ریوارد واقعی (R:R):", value=0.0, step=0.1)
+                    col_c1, col_c2 = st.columns(2)
+                    with col_c1:
+                        pnl_val = st.number_input("سود / زیان دلاری (PnL $):", value=0.0, step=10.0)
+                    with col_c2:
+                        rr_val = st.number_input("نسبت ریسک به ریوارد واقعی (R:R):", value=0.0, step=0.1)
 
-                        save_close = st.form_submit_button("💾 ثبت نهایی خروج معامله", use_container_width=True)
-                        if save_close:
-                            selected_trade_data["Vaziyat"] = "Baste-shode (Closed)"
-                            selected_trade_data["Noe TP / Khorooj"] = exit_opts[exit_sel][0]
-                            selected_trade_data["Natijeh (PnL $)"] = str(pnl_val)
-                            selected_trade_data["R:R Vaghei"] = str(rr_val)
-                            if upsert_trade(selected_trade_data):
-                                st.success(f"معامله {target_trade_id} با موفقیت بسته شد.")
-                                st.rerun()
+                    if st.button("💾 ثبت نهایی خروج معامله", use_container_width=True):
+                        selected_trade_data["Vaziyat"] = "Baste-shode (Closed)"
+                        selected_trade_data["Noe TP / Khorooj"] = exit_opts[exit_sel][0]
+                        selected_trade_data["Natijeh (PnL $)"] = str(pnl_val)
+                        selected_trade_data["R:R Vaghei"] = str(rr_val)
+                        if upsert_trade(selected_trade_data):
+                            st.success(f"معامله {target_trade_id} با موفقیت بسته شد.")
+                            st.rerun()
 
 # =========================================================
 # TAB 3: ADVANCED ANALYTICS DASHBOARD
@@ -829,7 +823,6 @@ with tab3:
             ch_col1, ch_col2 = st.columns([1, 1.8])
             with ch_col1:
                 with st.container(border=True):
-                    # Win Rate Gauge Chart
                     fig_gauge = go.Figure(go.Indicator(
                         mode="gauge+number",
                         value=win_rate,
@@ -856,7 +849,6 @@ with tab3:
 
             with ch_col2:
                 with st.container(border=True):
-                    # Equity Curve
                     closed_trades["Trade_Number"] = range(1, len(closed_trades) + 1)
                     fig_eq = go.Figure()
                     fig_eq.add_trace(go.Scatter(
@@ -882,7 +874,6 @@ with tab3:
                     st.plotly_chart(fig_eq, use_container_width=True)
 
             with st.container(border=True):
-                # Individual Trade PnL Bar Chart
                 bar_colors = ['#10b981' if p >= 0 else '#ef4444' for p in closed_trades["Natijeh (PnL $)"]]
                 fig_bar = go.Figure(go.Bar(
                     x=closed_trades["Trade ID"],
