@@ -225,6 +225,11 @@ with tab1:
     if "current_trade_id" not in st.session_state:
         st.session_state["current_trade_id"] = generate_trade_id()
 
+    # مدیریت ریست انتخاب‌گر پیش‌نویس بدون دستکاری غیرمجاز State ویجت رندر شده
+    if "reset_to_new" in st.session_state and st.session_state["reset_to_new"]:
+        st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+        st.session_state["reset_to_new"] = False
+
     df_all = load_data()
     loaded_data = {}
 
@@ -239,6 +244,10 @@ with tab1:
                 }
                 draft_options = ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys())
                 
+                # اطمینان از معتبر بودن مقدار ذخیره‌شده
+                if st.session_state.get("draft_selector") not in draft_options:
+                    st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+
                 col_sel_draft, col_del_draft = st.columns([4, 1])
                 with col_sel_draft:
                     selected_draft_label = st.selectbox(
@@ -255,11 +264,10 @@ with tab1:
                             t_id = draft_dict[selected_draft_label]
                             delete_trade_by_id(t_id)
                             st.session_state["current_trade_id"] = generate_trade_id()
-                            st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+                            st.session_state["reset_to_new"] = True
                             st.success(f"پیش‌نویس {t_id} حذف شد.")
                             st.rerun()
 
-                # بررسی تغییر انتخاب کاربر
                 if selected_draft_label != "-- ایجاد تحلیل جدید --":
                     chosen_id = draft_dict[selected_draft_label]
                     matched_rows = df_all[df_all["Trade ID"] == chosen_id]
@@ -267,7 +275,6 @@ with tab1:
                         loaded_data = matched_rows.iloc[0].to_dict()
                         st.session_state["current_trade_id"] = chosen_id
                 else:
-                    # اگر قبلاً در حالت ویرایش پیش‌نویس بوده و اکنون تحلیل جدید انتخاب شده است
                     if st.session_state.get("current_trade_id") in draft_dict.values():
                         st.session_state["current_trade_id"] = generate_trade_id()
                         st.rerun()
@@ -665,7 +672,7 @@ with tab1:
 
                     if upsert_trade(details):
                         st.session_state["current_trade_id"] = generate_trade_id()
-                        st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+                        st.session_state["reset_to_new"] = True
                         st.success(f"پیش‌نویس {trade_id_val} با موفقیت ذخیره شد.")
                         st.rerun()
 
@@ -716,7 +723,7 @@ with tab1:
 
                         if upsert_trade(details):
                             st.session_state["current_trade_id"] = generate_trade_id()
-                            st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+                            st.session_state["reset_to_new"] = True
                             st.success(f"پوزیشن {trade_id_val} با موفقیت ثبت شد.")
                             st.rerun()
 
