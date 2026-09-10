@@ -238,7 +238,6 @@ with tab1:
             with st.container(border=True):
                 st.markdown("##### 📌 بازیابی پیش‌نویس‌های نیمه‌کاره")
 
-                # دو فیلتر نماد و مرتب‌سازی بر اساس امتیاز
                 col_filt_sym, col_sort_score = st.columns(2)
                 with col_filt_sym:
                     unique_symbols = sorted(
@@ -251,12 +250,10 @@ with tab1:
                     sort_order_options = ["جدیدترین (پیش‌فرض)", "بیشترین امتیاز به کمترین", "کمترین امتیاز به بیشترین"]
                     selected_sort_order = st.selectbox("📊 مرتب‌سازی بر اساس امتیاز:", sort_order_options)
 
-                # اعمال فیلتر نماد
                 filtered_drafts = draft_trades.copy()
                 if selected_sym_filter != "همه نمادها":
                     filtered_drafts = filtered_drafts[filtered_drafts["Namad"] == selected_sym_filter]
 
-                # اعمال مرتب‌سازی بر اساس امتیاز
                 if "Emtiyaze 3 Marhale" in filtered_drafts.columns:
                     filtered_drafts["temp_score"] = pd.to_numeric(filtered_drafts["Emtiyaze 3 Marhale"], errors="coerce").fillna(0)
                 else:
@@ -315,8 +312,37 @@ with tab1:
         with col_id:
             st.text_input("شناسه یکتا (Trade ID):", value=trade_id_val, disabled=True, key=f"tid_{trade_id_val}")
         with col_sym:
-            default_sym = loaded_data.get("Namad", "") if pd.notna(loaded_data.get("Namad")) else ""
-            symbol = st.text_input("نماد معاملاتی (Symbol):", value=default_sym, placeholder="مثلاً EURUSD, XAUUSD", key=f"sym_{trade_id_val}").strip().upper()
+            default_symbols = ["EURUSD", "XAUUSD", "BTCUSD", "IRTTR", "مظنه آبشده"]
+            saved_symbol = str(loaded_data.get("Namad", "")).strip() if pd.notna(loaded_data.get("Namad")) else ""
+            
+            custom_option_label = "✏️ نماد دلخواه (سایر)..."
+            symbol_options = default_symbols + [custom_option_label]
+
+            if saved_symbol in default_symbols:
+                sym_box_index = default_symbols.index(saved_symbol)
+            elif saved_symbol != "":
+                sym_box_index = len(symbol_options) - 1
+            else:
+                sym_box_index = 0
+
+            chosen_symbol_select = st.selectbox(
+                "نماد معاملاتی (Symbol):",
+                options=symbol_options,
+                index=sym_box_index,
+                key=f"sym_select_{trade_id_val}"
+            )
+
+            if chosen_symbol_select == custom_option_label:
+                custom_initial = saved_symbol if saved_symbol not in default_symbols else ""
+                symbol = st.text_input(
+                    "تایپ نماد معاملاتی دلخواه:",
+                    value=custom_initial,
+                    placeholder="مثلاً USDJPY, ETHUSD...",
+                    key=f"sym_custom_{trade_id_val}"
+                ).strip().upper()
+            else:
+                symbol = chosen_symbol_select
+
         with col_dir:
             direction_options = ["🟢 خرید (Buy / Demand)", "🔴 فروش (Sell / Supply)"]
             default_dir_idx = 0
@@ -379,7 +405,24 @@ with tab1:
                     saved_time = datetime.datetime.strptime(str(loaded_data.get("Saate Candle/Zone")), "%H:%M").time()
                 except Exception:
                     pass
-            candle_time = st.time_input("ساعت کندل / ناحیه:", value=saved_time, key=f"ctime_{trade_id_val}")
+            
+            time_choices = [
+                datetime.time(h, m)
+                for h in range(24)
+                for m in range(0, 60, 5)
+            ]
+            if saved_time.replace(second=0, microsecond=0) not in time_choices:
+                time_choices.append(saved_time.replace(second=0, microsecond=0))
+                time_choices = sorted(time_choices)
+                
+            default_t_idx = time_choices.index(saved_time.replace(second=0, microsecond=0))
+            candle_time = st.selectbox(
+                "ساعت کندل / ناحیه:",
+                options=time_choices,
+                index=default_t_idx,
+                format_func=lambda t: t.strftime("%H:%M"),
+                key=f"ctime_{trade_id_val}"
+            )
 
         scenario_info = scenario_options[selected_scenario_key]
         scenario_code = scenario_info[1]
@@ -436,7 +479,7 @@ with tab1:
 
                     ach_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("🎯 BOS قوی یا حذف زون مقابل (Removal)", 5), "2": ("BOS خرد یا هانت/سوئیپ", 2), "3": ("بدون دستاورد", 0)}
                     ach_sel = st.selectbox("۱.۷. دستاورد بیس (Achievement)؟", list(ach_opts.keys()), index=get_index_by_val(ach_opts, loaded_data.get("1.7 Dastavard Base")), format_func=lambda x: ach_opts[x][0], key=f"ach_{trade_id_val}")
-                    score_m1 += ach_opts[ach_sel][1]
+                    score_m1 += ach_opts[dep_sel][1] if dep_sel in ach_opts else ach_opts[ach_sel][1]
                     details["1.7 Dastavard Base"] = ach_opts[ach_sel][0]
 
             elif scenario_code == "FLIP_ZONE":
