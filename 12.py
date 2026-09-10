@@ -247,8 +247,8 @@ with tab1:
                     selected_sym_filter = st.selectbox("🔍 فیلتر بر اساس نماد:", sym_filter_options)
 
                 with col_sort_score:
-                    sort_order_options = ["جدیدترین (پیش‌فرض)", "بیشترین امتیاز به کمترین", "کمترین امتیاز به بیشترین"]
-                    selected_sort_order = st.selectbox("📊 مرتب‌سازی بر اساس امتیاز:", sort_order_options)
+                    sort_order_options = ["جدیدترین (پیش‌فرض)", "بیشترین امتیاز و گرید به کمترین", "کمترین امتیاز به بیشترین"]
+                    selected_sort_order = st.selectbox("📊 مرتب‌سازی بر اساس امتیاز و اعتبار:", sort_order_options)
 
                 filtered_drafts = draft_trades.copy()
                 if selected_sym_filter != "همه نمادها":
@@ -259,13 +259,28 @@ with tab1:
                 else:
                     filtered_drafts["temp_score"] = 0
 
-                if selected_sort_order == "بیشترین امتیاز به کمترین":
-                    filtered_drafts = filtered_drafts.sort_values(by="temp_score", ascending=False)
+                def get_grade_weight(g):
+                    g_str = str(g)
+                    if "A+" in g_str:
+                        return 3
+                    elif "مشروط" in g_str or "B" in g_str:
+                        return 2
+                    elif "ممنوع" in g_str or "No Trade" in g_str:
+                        return 1
+                    return 0
+
+                if "Grade" in filtered_drafts.columns:
+                    filtered_drafts["grade_weight"] = filtered_drafts["Grade"].apply(get_grade_weight)
+                else:
+                    filtered_drafts["grade_weight"] = 0
+
+                if selected_sort_order == "بیشترین امتیاز و گرید به کمترین":
+                    filtered_drafts = filtered_drafts.sort_values(by=["grade_weight", "temp_score"], ascending=[False, False])
                 elif selected_sort_order == "کمترین امتیاز به بیشترین":
-                    filtered_drafts = filtered_drafts.sort_values(by="temp_score", ascending=True)
+                    filtered_drafts = filtered_drafts.sort_values(by=["grade_weight", "temp_score"], ascending=[True, True])
 
                 draft_dict = {
-                    f"شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | امتیاز: {row.get('Emtiyaze 3 Marhale', '0')} | جهت: {row.get('Jahat (Buy/Sell)', '')}": row.get('Trade ID')
+                    f"شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | گرید: {row.get('Grade', 'پیش‌نویس')} | امتیاز: {row.get('Emtiyaze 3 Marhale', '0')} | جهت: {row.get('Jahat (Buy/Sell)', '')}": row.get('Trade ID')
                     for _, row in filtered_drafts.iterrows()
                 }
                 draft_options = ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys())
@@ -478,8 +493,8 @@ with tab1:
                     details["1.6 Mizane Parthabe Lag"] = pip_opts[pip_sel][0]
 
                     ach_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("🎯 BOS قوی یا حذف زون مقابل (Removal)", 5), "2": ("BOS خرد یا هانت/سوئیپ", 2), "3": ("بدون دستاورد", 0)}
-                    ach_sel = st.selectbox("۱.۷. دستاورد بیس (Achievement)؟", list(ach_opts.keys()), index=get_index_by_val(ach_opts, loaded_data.get("1.7 Dastavard Base")), format_func=lambda x: ach_opts[x][0], key=f"ach_{trade_id_val}")
-                    score_m1 += ach_opts[dep_sel][1] if dep_sel in ach_opts else ach_opts[ach_sel][1]
+                    ach_sel = st.selectbox("۱.۷. دستاورد بیس (Achievement)؟", list(ach_opts.keys()), index=get_index_by_val(ach_opts, loaded_data.get("1.7 Dastavard Base")), format_func=lambda x: ach_opts[ach_sel][1], key=f"ach_{trade_id_val}")
+                    score_m1 += ach_opts[ach_sel][1]
                     details["1.7 Dastavard Base"] = ach_opts[ach_sel][0]
 
             elif scenario_code == "FLIP_ZONE":
