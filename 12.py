@@ -225,7 +225,6 @@ with tab1:
     if "current_trade_id" not in st.session_state:
         st.session_state["current_trade_id"] = generate_trade_id()
 
-    # مدیریت ریست انتخاب‌گر پیش‌نویس بدون دستکاری غیرمجاز State ویجت رندر شده
     if "reset_to_new" in st.session_state and st.session_state["reset_to_new"]:
         st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
         st.session_state["reset_to_new"] = False
@@ -234,17 +233,46 @@ with tab1:
     loaded_data = {}
 
     if not df_all.empty and "Vaziyat" in df_all.columns:
-        draft_trades = df_all[df_all["Vaziyat"] == "Pishnevis (Draft)"]
+        draft_trades = df_all[df_all["Vaziyat"] == "Pishnevis (Draft)"].copy()
         if not draft_trades.empty:
             with st.container(border=True):
                 st.markdown("##### 📌 بازیابی پیش‌نویس‌های نیمه‌کاره")
+
+                # دو فیلتر نماد و مرتب‌سازی بر اساس امتیاز
+                col_filt_sym, col_sort_score = st.columns(2)
+                with col_filt_sym:
+                    unique_symbols = sorted(
+                        [s for s in draft_trades["Namad"].dropna().unique().tolist() if str(s).strip() != ""]
+                    )
+                    sym_filter_options = ["همه نمادها"] + unique_symbols
+                    selected_sym_filter = st.selectbox("🔍 فیلتر بر اساس نماد:", sym_filter_options)
+
+                with col_sort_score:
+                    sort_order_options = ["جدیدترین (پیش‌فرض)", "بیشترین امتیاز به کمترین", "کمترین امتیاز به بیشترین"]
+                    selected_sort_order = st.selectbox("📊 مرتب‌سازی بر اساس امتیاز:", sort_order_options)
+
+                # اعمال فیلتر نماد
+                filtered_drafts = draft_trades.copy()
+                if selected_sym_filter != "همه نمادها":
+                    filtered_drafts = filtered_drafts[filtered_drafts["Namad"] == selected_sym_filter]
+
+                # اعمال مرتب‌سازی بر اساس امتیاز
+                if "Emtiyaze 3 Marhale" in filtered_drafts.columns:
+                    filtered_drafts["temp_score"] = pd.to_numeric(filtered_drafts["Emtiyaze 3 Marhale"], errors="coerce").fillna(0)
+                else:
+                    filtered_drafts["temp_score"] = 0
+
+                if selected_sort_order == "بیشترین امتیاز به کمترین":
+                    filtered_drafts = filtered_drafts.sort_values(by="temp_score", ascending=False)
+                elif selected_sort_order == "کمترین امتیاز به بیشترین":
+                    filtered_drafts = filtered_drafts.sort_values(by="temp_score", ascending=True)
+
                 draft_dict = {
-                    f"شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | جهت: {row.get('Jahat (Buy/Sell)', '')}": row.get('Trade ID')
-                    for _, row in draft_trades.iterrows()
+                    f"شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | امتیاز: {row.get('Emtiyaze 3 Marhale', '0')} | جهت: {row.get('Jahat (Buy/Sell)', '')}": row.get('Trade ID')
+                    for _, row in filtered_drafts.iterrows()
                 }
                 draft_options = ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys())
                 
-                # اطمینان از معتبر بودن مقدار ذخیره‌شده
                 if st.session_state.get("draft_selector") not in draft_options:
                     st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
 
@@ -825,13 +853,11 @@ with tab3:
             gross_loss = abs(closed_trades[closed_trades["Natijeh (PnL $)"] < 0]["Natijeh (PnL $)"].sum())
             profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 1.0)
 
-            # محاسبه اکوئیتی و Max Drawdown
             closed_trades["Equity"] = closed_trades["Natijeh (PnL $)"].cumsum()
             closed_trades["Peak"] = closed_trades["Equity"].cummax()
             closed_trades["Drawdown"] = closed_trades["Peak"] - closed_trades["Equity"]
             max_dd = closed_trades["Drawdown"].max() if not closed_trades.empty else 0.0
 
-            # KPI Cards
             kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
             kpi1.metric("کل سود/زیان", f"${total_pnl:,.2f}", delta=f"{total_pnl:,.2f}")
             kpi2.metric("وین‌ریت (Win Rate)", f"{win_rate:.1f}%")
@@ -841,7 +867,6 @@ with tab3:
 
             st.write("")
 
-            # نمودارها
             ch_col1, ch_col2 = st.columns([1, 1.8])
             with ch_col1:
                 with st.container(border=True):
