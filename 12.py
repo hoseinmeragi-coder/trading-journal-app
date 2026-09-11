@@ -334,11 +334,9 @@ with tab1:
             symbol_options = default_symbols + [custom_option_label]
 
             if saved_symbol in default_symbols:
-                sym_box_index = default_symbols.index(saved_symbol)
-            elif saved_symbol != "":
-                sym_box_index = len(symbol_options) - 1
-            else:
-                sym_box_index = 0
+    sym_box_index = default_symbols.index(saved_symbol)
+else:
+    sym_box_index = len(symbol_options) - 1
 
             chosen_symbol_select = st.selectbox(
                 "نماد معاملاتی (Symbol):",
