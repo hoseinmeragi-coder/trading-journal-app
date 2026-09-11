@@ -491,7 +491,7 @@ with tab1:
                     details["1.6 Mizane Parthabe Lag"] = pip_opts[pip_sel][0]
 
                     ach_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("🎯 BOS قوی یا حذف زون مقابل (Removal)", 5), "2": ("BOS خرد یا هانت/سوئیپ", 2), "3": ("بدون دستاورد", 0)}
-                    ach_sel = st.selectbox("۱.۷. دستاورد بیس (Achievement)؟", list(ach_opts.keys()), index=get_index_by_val(ach_opts, loaded_data.get("1.7 Dastavard Base")), format_func=lambda x: ach_opts[ach_sel][1], key=f"ach_{trade_id_val}")
+                    ach_sel = st.selectbox("۱.۷. دستاورد بیس (Achievement)؟", list(ach_opts.keys()), index=get_index_by_val(ach_opts, loaded_data.get("1.7 Dastavard Base")), format_func=lambda x: ach_opts[x][0], key=f"ach_{trade_id_val}")
                     score_m1 += ach_opts[ach_sel][1]
                     details["1.7 Dastavard Base"] = ach_opts[ach_sel][0]
 
