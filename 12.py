@@ -760,56 +760,94 @@ with tab1:
                         st.success(f"پیش‌نویس {trade_id_val} با موفقیت ذخیره شد.")
                         st.rerun()
 
-    # ---------------------------------------------------------
-    # مدیریت حجم و ثبت معامله باز
-    # ---------------------------------------------------------
-    if can_proceed:
-        with st.container(border=True):
-            st.subheader("💰 محاسبه ریسک، حجم و ثبت معامله باز")
-            raw_balance = loaded_data.get("Balance", "")
-            try:
-                saved_balance = float(raw_balance) if raw_balance != "" and pd.notna(raw_balance) else 10000.0
-            except (ValueError, TypeError):
-                saved_balance = 10000.0
+   # =========================================================
+# مدیریت هوشمند حجم بر اساس کلاس دارایی
+# =========================================================
+if can_proceed:
+    with st.container(border=True):
+        st.subheader("💰 محاسبه ریسک، حجم و مدیریت پوزیشن")
 
-            with st.form("trade_execution_form"):
-                col_p1, col_p2, col_p3 = st.columns(3)
-                with col_p1:
-                    balance = st.number_input("بالانس حساب ($):", min_value=1.0, value=saved_balance, step=100.0)
+        # تشخیص کلاس بازار بر اساس نماد
+        sym_upper = symbol.upper().strip()
+        is_toman = sym_upper in ["IRTTR", "مظنه آبشده"]
+        is_crypto = sym_upper in ["BTCUSD", "ETHUSD"] or ("USDT" in sym_upper and not is_toman)
+        is_forex = not (is_toman or is_crypto)
+
+        currency_label = "تومان" if is_toman else "$"
+        
+        # مقدار پیش‌فرض بالانس متناسب با واحد
+        raw_balance = loaded_data.get("Balance", "")
+        default_bal = 100_000_000.0 if is_toman else 10_000.0
+        try:
+            saved_balance = float(raw_balance) if raw_balance != "" and pd.notna(raw_balance) else default_bal
+        except (ValueError, TypeError):
+            saved_balance = default_bal
+
+        with st.form("trade_execution_form"):
+            col_p1, col_p2, col_p3 = st.columns(3)
+
+            with col_p1:
+                balance = st.number_input(f"بالانس حساب ({currency_label}):", min_value=1.0, value=saved_balance, step=100.0 if not is_toman else 1_000_000.0)
+
+            # شاخه اول: بازارهای بر پایه قیمت واقعی (کریپتو، تتر و مظنه)
+            if is_crypto or is_toman:
                 with col_p2:
-                    sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip):", min_value=0.1, value=15.0, step=1.0)
+                    entry_price = st.number_input(f"قیمت نقطه ورود ({currency_label}):", min_value=0.00001, value=1000.0, format="%.4f")
                 with col_p3:
-                    pip_val = st.number_input("ارزش هر پیپ برای ۱ لات ($):", min_value=0.01, value=10.0, step=0.5)
+                    sl_price = st.number_input(f"قیمت حد ضرر ({currency_label}):", min_value=0.00001, value=990.0, format="%.4f")
 
+                price_distance = abs(entry_price - sl_price)
                 risk_amount = balance * (risk_pct / 100)
-                lot_size = ((risk_amount / (sl_pips * pip_val)) if sl_pips > 0 and risk_pct > 0 and pip_val > 0 else 0.0)
+                pos_size = (risk_amount / price_distance) if price_distance > 0 else 0.0
+
+                if is_toman and "مظنه" in sym_upper:
+                    size_unit = "مثقال"
+                elif is_toman:
+                    size_unit = "USDT (تتر)"
+                else:
+                    size_unit = "واحد / سکه"
 
                 col_m_lot, col_m_risk = st.columns(2)
-                col_m_lot.metric("حجم مجاز معامله", f"{round(lot_size, 2)} Lot")
-                col_m_risk.metric("میزان سرمایه در ریسک", f"${risk_amount:.2f}")
+                col_m_lot.metric("حجم مجاز ورود", f"{pos_size:,.4f} {size_unit}")
+                col_m_risk.metric("میزان سرمایه در ریسک", f"{risk_amount:,.2f} {currency_label}")
 
-                submit_trade = st.form_submit_button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True)
+            # شاخه دوم: فارکس سنتی (بر مبنای پیپ و لات)
+            else:
+                default_pip_val = 10.0 if "XAU" not in sym_upper else 10.0
+                with col_p2:
+                    sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip / Point):", min_value=0.1, value=15.0, step=1.0)
+                with col_p3:
+                    pip_val = st.number_input("ارزش هر پیپ برای ۱ لات ($):", min_value=0.01, value=default_pip_val, step=0.5)
 
-                if submit_trade:
-                    if not symbol:
-                        st.error("❌ نماد معامله را مشخص کنید.")
-                    else:
-                        details["Balance"] = balance
-                        details["Emtiyaze 3 Marhale"] = total_score_3m
-                        details["Grade"] = grade
-                        details["Darsade Risk"] = f"{risk_pct}%"
-                        details["Risk ($)"] = round(risk_amount, 2)
-                        details["Hajm (Lot)"] = round(lot_size, 2)
-                        details["Vaziyat"] = "Baz (Open)"
-                        details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
-                        details["Natijeh (PnL $)"] = ""
-                        details["R:R Vaghei"] = ""
+                risk_amount = balance * (risk_pct / 100)
+                pos_size = (risk_amount / (sl_pips * pip_val)) if (sl_pips > 0 and pip_val > 0) else 0.0
 
-                        if upsert_trade(details):
-                            st.session_state["current_trade_id"] = generate_trade_id()
-                            st.session_state["reset_to_new"] = True
-                            st.success(f"پوزیشن {trade_id_val} با موفقیت ثبت شد.")
-                            st.rerun()
+                col_m_lot, col_m_risk = st.columns(2)
+                col_m_lot.metric("حجم مجاز معامله", f"{round(pos_size, 2)} Lot")
+                col_m_risk.metric("میزان سرمایه در ریسک", f"${risk_amount:,.2f}")
+
+            submit_trade = st.form_submit_button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True)
+
+            if submit_trade:
+                if not symbol:
+                    st.error("❌ نماد معامله را مشخص کنید.")
+                else:
+                    details["Balance"] = balance
+                    details["Emtiyaze 3 Marhale"] = total_score_3m
+                    details["Grade"] = grade
+                    details["Darsade Risk"] = f"{risk_pct}%"
+                    details["Risk ($)"] = round(risk_amount, 2)
+                    details["Hajm (Lot)"] = f"{round(pos_size, 4)} {size_unit if (is_crypto or is_toman) else 'Lot'}"
+                    details["Vaziyat"] = "Baz (Open)"
+                    details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
+                    details["Natijeh (PnL $)"] = ""
+                    details["R:R Vaghei"] = ""
+
+                    if upsert_trade(details):
+                        st.session_state["current_trade_id"] = generate_trade_id()
+                        st.session_state["reset_to_new"] = True
+                        st.success(f"پوزیشن {trade_id_val} با موفقیت ثبت شد.")
+                        st.rerun()
 
 # =========================================================
 # TAB 2: UPDATE CLOSED TRADE
