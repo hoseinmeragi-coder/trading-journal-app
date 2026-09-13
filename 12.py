@@ -845,34 +845,52 @@ with tab1:
             else:
                 col_e1, col_e2 = st.columns(2)
                 with col_e1:
-                    entry_price = st.number_input("قیمت ورود (Entry):", min_value=0.000001, value=100000.0 if not is_toman_sym else 90000.0, format="%.4f", key=f"entry_price_{trade_id_val}")
+                    entry_price = st.number_input(
+                        "قیمت ورود (Entry):", 
+                        min_value=0.000001, 
+                        value=100000.0 if is_toman_sym else 100.0, 
+                        format="%.4f", 
+                        key=f"entry_price_{trade_id_val}"
+                    )
                 with col_e2:
-                    sl_price = st.number_input("قیمت حد ضرر (Stop Loss):", min_value=0.000001, value=90000.0 if not is_toman_sym else 88000.0, format="%.4f", key=f"sl_price_{trade_id_val}")
+                    sl_price = st.number_input(
+                        "قیمت حد ضرر (Stop Loss):", 
+                        min_value=0.000001, 
+                        value=90000.0 if is_toman_sym else 95.0, 
+                        format="%.4f", 
+                        key=f"sl_price_{trade_id_val}"
+                    )
 
-                # استخراج هوشمند واحد حجم خروجی
+                # استخراج واحد حجم خروجی (دارایی پایه)
                 if "مظنه" in sym_upper or "آبشده" in sym_upper:
                     volume_unit = "مثقال"
-                elif sym_upper in ["IRTTR", "USDTIRT"]:
+                elif sym_upper in ["IRTTR", "USDTIRT"] or "تتر" in sym_upper:
                     volume_unit = "تتر (USDT)"
                 elif "BTC" in sym_upper:
-                    volume_unit = "BTC (بیت‌کوین)"
+                    volume_unit = "BTC"
                 elif "ETH" in sym_upper:
-                    volume_unit = "ETH (اتریوم)"
+                    volume_unit = "ETH"
                 else:
                     volume_unit = f"واحد ({symbol})"
 
                 price_diff = abs(float(entry_price) - float(sl_price))
+
                 if price_diff > 0:
-                    pos_size = risk_amount / price_diff
+                    # بررسی تناقض واحد: بالانس تتری با قیمت تومانی (مانند معامله تتر به تومان با کیف‌پول تتر)
+                    if currency_unit in ["دلار ($)", "تتر (USDT)"] and (is_toman_sym or float(entry_price) > 5000):
+                        # تبدیل ریسک تتری به تومان با نرخ ورود
+                        risk_in_quote_currency = risk_amount * float(entry_price)
+                        pos_size = risk_in_quote_currency / price_diff
+                    else:
+                        pos_size = risk_amount / price_diff
+                    
                     position_value = pos_size * float(entry_price)
 
                 st.markdown("---")
                 col_m_lot, col_m_val, col_m_risk = st.columns(3)
                 col_m_lot.metric("حجم معامله (سفارش)", f"{pos_size:,.4f} {volume_unit}")
-                col_m_val.metric("ارزش کل موقعیت", f"{position_value:,.2f} {currency_unit}")
+                col_m_val.metric("ارزش کل موقعیت", f"{position_value:,.2f} تومان" if (is_toman_sym or float(entry_price) > 5000) else f"{position_value:,.2f} {currency_unit}")
                 col_m_risk.metric("سرمایه در ریسک", f"{risk_amount:,.2f} {currency_unit} ({actual_risk_pct}%)")
-
-            submit_trade = st.button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True, key=f"btn_open_{trade_id_val}")
 
 # =========================================================
 # TAB 2: UPDATE CLOSED TRADE
