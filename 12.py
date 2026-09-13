@@ -363,7 +363,7 @@ with tab1:
                 default_dir_idx = direction_options.index(loaded_data.get("Jahat (Buy/Sell)"))
             trade_direction = st.selectbox("جهت معامله روی ناحیه:", direction_options, index=default_dir_idx, key=f"dir_{trade_id_val}")
 
-        # فیلد لینک عکس بخش تحلیل
+        # فیلد لینک تصویر بخش تحلیل
         analysis_image_url = st.text_input(
             "🔗 لینک تصویر تحلیل چارت:",
             value=str(loaded_data.get("Link Tasvir Tahlil", "")),
@@ -535,6 +535,7 @@ with tab1:
                     ffvg_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("FVG واضح و پرنشده وجود دارد", 5), "2": ("FVG وجود ندارد یا پر شده", 1)}
                     ffvg_sel = st.selectbox("۱.۶. وضعیت FVG در محدوده فلیپ؟", list(ffvg_opts.keys()), index=get_index_by_val(ffvg_opts, loaded_data.get("1.6 Vaziyaate FVG Flip")), format_func=lambda x: ffvg_opts[x][0], key=f"ffvg_{trade_id_val}")
                     score_m1 += ffvg_opts[ffvg_sel][1]
+                    details["1.6 Vaziyaate FVG Flip"] = ffvg_opts[field] if (field := "1.6 Vaziyaate FVG Flip") in loaded_data else ffvg_opts[ffvg_sel][0]
                     details["1.6 Vaziyaate FVG Flip"] = ffvg_opts[ffvg_sel][0]
 
             elif scenario_code == "CANDLE_OB":
@@ -920,24 +921,6 @@ with tab1:
                     pos_value = pos_size * float(entry_p)
                     pos_value_unit = "تومان" if ("تومان" in market_type or "طلا" in market_type) else "تتر/دلار"
 
-            # فیلدهای جدید: لینک تصویر موقعیت و یادداشت‌های معامله
-            st.markdown("---")
-            col_img_pos, col_notes = st.columns(2)
-            with col_img_pos:
-                position_image_url = st.text_input(
-                    "🔗 لینک تصویر ورود / پوزیشن:",
-                    value=str(loaded_data.get("Link Tasvir Position", "")),
-                    placeholder="لینک چارت در زمان ورود یا اسکرین‌شات متاتریدر...",
-                    key=f"img_pos_{trade_id_val}"
-                )
-            with col_notes:
-                trade_notes = st.text_area(
-                    "📝 یادداشت‌ها و نکات ستاپ:",
-                    value=str(loaded_data.get("Yaddasht-ha", "")),
-                    placeholder="هر نکته‌ای در مورد مدیریت پوزیشن، احساسات، دلیل ورود یا سناریوی مدیریت...",
-                    key=f"notes_{trade_id_val}"
-                )
-
             # نمایش آنی نتایج و متریک‌ها
             st.markdown("---")
             col_m1, col_m2, col_m3 = st.columns(3)
@@ -962,8 +945,6 @@ with tab1:
                     details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
                     details["Natijeh (PnL $)"] = ""
                     details["R:R Vaghei"] = ""
-                    details["Link Tasvir Position"] = position_image_url
-                    details["Yaddasht-ha"] = trade_notes
 
                     if upsert_trade(details):
                         st.session_state["current_trade_id"] = generate_trade_id()
@@ -995,12 +976,32 @@ with tab2:
                 selected_trade_data = open_trades[open_trades["Trade ID"] == target_trade_id].iloc[0].to_dict()
 
             with st.container(border=True):
+                # فیلدهای لینک تصویر ورود و یادداشت‌ها داخل بخش مدیریت پوزیشن
+                col_exit_img, col_exit_notes = st.columns(2)
+                with col_exit_img:
+                    pos_img_val = st.text_input(
+                        "🔗 لینک تصویر ورود / پوزیشن:",
+                        value=str(selected_trade_data.get("Link Tasvir Position", "")),
+                        placeholder="لینک چارت در زمان ورود یا متاتریدر...",
+                        key=f"mng_img_{target_trade_id}"
+                    )
+                with col_exit_notes:
+                    pos_notes_val = st.text_area(
+                        "📝 یادداشت‌ها و نکات ترید:",
+                        value=str(selected_trade_data.get("Yaddasht-ha", "")),
+                        placeholder="نکات ورود، مدیریت ترید، خروج، احساسات...",
+                        key=f"mng_notes_{target_trade_id}"
+                    )
+
+                st.markdown("---")
                 status_opts = {"1": ("بسته‌شده با نتیجه مشخص (Closed Trade)", "CLOSED"), "2": ("لغوشده / نرسیده به نقطه ورود (Canceled)", "CANCELED")}
                 status_sel = st.radio("وضعیت خروج معامله:", list(status_opts.keys()), format_func=lambda x: status_opts[x][0])
                 status_code = status_opts[status_sel][1]
 
                 if status_code == "CANCELED":
                     if st.button("ثبت لغو معامله", use_container_width=True):
+                        selected_trade_data["Link Tasvir Position"] = pos_img_val
+                        selected_trade_data["Yaddasht-ha"] = pos_notes_val
                         selected_trade_data["Vaziyat"] = "Laghv-shode (Canceled/Missed)"
                         selected_trade_data["Noe TP / Khorooj"] = "Nareside be Entry"
                         selected_trade_data["Natijeh (PnL $)"] = "0.0"
@@ -1027,6 +1028,8 @@ with tab2:
 
                         save_close = st.form_submit_button("💾 ثبت نهایی خروج معامله", use_container_width=True)
                         if save_close:
+                            selected_trade_data["Link Tasvir Position"] = pos_img_val
+                            selected_trade_data["Yaddasht-ha"] = pos_notes_val
                             selected_trade_data["Vaziyat"] = "Baste-shode (Closed)"
                             selected_trade_data["Noe TP / Khorooj"] = exit_opts[exit_sel][0]
                             selected_trade_data["Natijeh (PnL $)"] = str(pnl_val)
