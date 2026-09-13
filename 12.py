@@ -957,16 +957,31 @@ with tab2:
             st.success("✅ در حال حاضر هیچ پوزیشن بازی وجود ندارد.")
         else:
             with st.container(border=True):
+                col_sel_trade, col_back_btn = st.columns([3, 1])
                 trade_lookup = {
                     f"شناسه: {row.get('Trade ID', '')} | نماد: {row.get('Namad', '')} | جهت: {row.get('Jahat (Buy/Sell)', '')} | تاریخ: {row.get('Tarikh', '')}": row.get("Trade ID")
                     for _, row in open_trades.iterrows()
                 }
-                selected_label = st.selectbox("انتخاب پوزیشن باز:", options=list(trade_lookup.keys()))
+                with col_sel_trade:
+                    selected_label = st.selectbox("انتخاب پوزیشن باز:", options=list(trade_lookup.keys()))
                 target_trade_id = trade_lookup[selected_label]
                 selected_trade_data = open_trades[open_trades["Trade ID"] == target_trade_id].iloc[0].to_dict()
 
+                with col_back_btn:
+                    st.write("")
+                    st.write("")
+                    # بازگرداندن معامله به بخش اول (پیش‌نویس و ادیت آنالیز)
+                    if st.button("↩️ بازگشت به آنالیز (ادیت)", use_container_width=True, help="برگرداندن معامله به تب اول جهت ویرایش پارامترهای تحلیل"):
+                        selected_trade_data["Vaziyat"] = "Pishnevis (Draft)"
+                        selected_trade_data["Noe TP / Khorooj"] = "Dar Hale Tahlil"
+                        if upsert_trade(selected_trade_data):
+                            st.session_state["current_trade_id"] = target_trade_id
+                            st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+                            st.success(f"پوزیشن {target_trade_id} به تب اول منتقل شد.")
+                            st.rerun()
+
             with st.container(border=True):
-                # فیلدهای جدید: قیمت ورود و ساعت ورود به پوزیشن
+                # فیلدهای قیمت ورود و ساعت ورود به پوزیشن
                 col_entry_p, col_entry_t = st.columns(2)
                 with col_entry_p:
                     saved_pos_entry_price = selected_trade_data.get("Gheymat Vorood Position", "")
@@ -1084,6 +1099,29 @@ with tab3:
     if df.empty or "Vaziyat" not in df.columns:
         st.info("هنوز دیتایی برای تحلیل ثبت نشده است.")
     else:
+        # ابزار بازگردانی معاملات بسته یا لغوشده به تب مدیریت پوزیشن (بخش دوم)
+        non_open_trades = df[df["Vaziyat"].isin(["Baste-shode (Closed)", "Laghv-shode (Canceled/Missed)"])].copy()
+        if not non_open_trades.empty:
+            with st.expander("🔄 بازگردانی معامله بسته‌شده / لغوشده به بخش مدیریت پوزیشن جهت ادیت"):
+                col_reopen_sel, col_reopen_btn = st.columns([3, 1])
+                reopen_dict = {
+                    f"شناسه: {r.get('Trade ID', '')} | نماد: {r.get('Namad', '')} | وضعیت: {r.get('Vaziyat', '')} | PnL: {r.get('Natijeh (PnL $)', '')}$": r.get('Trade ID')
+                    for _, r in non_open_trades.iterrows()
+                }
+                with col_reopen_sel:
+                    selected_reopen_label = st.selectbox("انتخاب معامله جهت بازگشایی و ادیت:", options=list(reopen_dict.keys()))
+                with col_reopen_btn:
+                    st.write("")
+                    st.write("")
+                    if st.button("↩️ بازگشت به بخش پوزیشن", use_container_width=True):
+                        reopen_id = reopen_dict[selected_reopen_label]
+                        matched_reopen = df[df["Trade ID"] == reopen_id].iloc[0].to_dict()
+                        matched_reopen["Vaziyat"] = "Baz (Open)"
+                        matched_reopen["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
+                        if upsert_trade(matched_reopen):
+                            st.success(f"معامله {reopen_id} به وضعیت باز تغییر یافت و به بخش ۲ منتقل شد.")
+                            st.rerun()
+
         df_calc = df.copy()
         df_calc["Natijeh (PnL $)"] = pd.to_numeric(df_calc["Natijeh (PnL $)"], errors="coerce").fillna(0.0)
         df_calc["R:R Vaghei"] = pd.to_numeric(df_calc["R:R Vaghei"], errors="coerce").fillna(0.0)
