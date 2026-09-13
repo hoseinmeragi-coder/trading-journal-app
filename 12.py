@@ -52,7 +52,7 @@ st.markdown(
     }
     
     /* Inputs Styling */
-    .stTextInput input, .stNumberInput input, .stSelectbox select {
+    .stTextInput input, .stNumberInput input, .stSelectbox select, .stTextArea textarea {
         background-color: #161b22 !important;
         color: #f0f6fc !important;
         border: 1px solid #30363d !important;
@@ -363,6 +363,14 @@ with tab1:
                 default_dir_idx = direction_options.index(loaded_data.get("Jahat (Buy/Sell)"))
             trade_direction = st.selectbox("جهت معامله روی ناحیه:", direction_options, index=default_dir_idx, key=f"dir_{trade_id_val}")
 
+        # فیلد لینک عکس بخش تحلیل
+        analysis_image_url = st.text_input(
+            "🔗 لینک تصویر تحلیل چارت:",
+            value=str(loaded_data.get("Link Tasvir Tahlil", "")),
+            placeholder="مثلاً لینک TradingView یا آدرس تصویر آپلود شده...",
+            key=f"img_analysis_{trade_id_val}"
+        )
+
     # ---------------------------------------------------------
     # مرحله ۱: بیس / زون
     # ---------------------------------------------------------
@@ -447,6 +455,7 @@ with tab1:
             "Tarikh": loaded_data.get("Tarikh", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
             "Namad": symbol,
             "Jahat (Buy/Sell)": trade_direction,
+            "Link Tasvir Tahlil": analysis_image_url,
             "Senarioye Asli Zone": scenario_info[0],
             "Timeframe Candle/Zone": zone_timeframe_val,
             "Tarikh Candle/Zone": str(candle_date),
@@ -760,7 +769,7 @@ with tab1:
                         st.success(f"پیش‌نویس {trade_id_val} با موفقیت ذخیره شد.")
                         st.rerun()
 
-  # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # مدیریت پیشرفته حجم و ریسک (پشتیبانی کامل از فارکس، کریپتو، طلا و ارز مبنا)
     # ---------------------------------------------------------
     if can_proceed:
@@ -790,7 +799,6 @@ with tab1:
                 )
 
             with col_cfg3:
-                # تخصیص خودکار واحد حجم سفارش بر اساس بازار
                 if "فارکس" in market_type:
                     target_vol_unit = "Lot"
                 elif "کریپتو" in market_type:
@@ -847,10 +855,10 @@ with tab1:
                 if sl_pips > 0 and pip_val > 0:
                     pos_size = risk_wallet / (float(sl_pips) * float(pip_val))
                 
-                pos_value = pos_size * 100000.0  # ۱ لات استاندارد ۱۰۰ هزار واحد ارز پایه
+                pos_value = pos_size * 100000.0
                 pos_value_unit = "ارز پایه (Notional)"
 
-            # شاخه دوم: فارکس کراس یا معکوس (مانند USDJPY با بالانس دلاری)
+            # شاخه دوم: فارکس کراس یا معکوس
             elif market_type == "فارکس کراس / معکوس (USDJPY, USDCHF, ...)":
                 col_cr1, col_cr2, col_cr3 = st.columns(3)
                 with col_cr1:
@@ -866,7 +874,7 @@ with tab1:
                 pos_value = pos_size * 100000.0
                 pos_value_unit = "ارز پایه"
 
-            # شاخه سوم: بازارهای بر مبنای قیمت ورود و استاپ (کریپتو، تتر، طلا)
+            # شاخه سوم: کریپتو، تتر، طلا
             else:
                 col_p_e1, col_p_e2 = st.columns(2)
                 with col_p_e1:
@@ -888,24 +896,19 @@ with tab1:
 
                 price_distance = abs(float(entry_p) - float(sl_p))
 
-                # فیلد نرخ تبدیل در صورت ناهمخوانی واحد بالانس با قیمت معامله
                 usdt_to_irt_rate = 1.0
                 needs_conversion = False
                 
-                # حالت الف: معامله تتری/کریپتویی است ولی بالانس شما تومان است
                 if "کریپتو" in market_type and wallet_currency == "تومان":
                     needs_conversion = True
                     usdt_to_irt_rate = st.number_input("نرخ روز تبدیل تتر به تومان:", min_value=1.0, value=100000.0, step=500.0, key=f"conv_irt_{trade_id_val}")
                 
-                # حالت ب: معامله تومانی (طلا یا تتر/تومان) است ولی بالانس شما تتر/دلار است
                 elif ("تومان" in market_type or "طلا" in market_type) and wallet_currency in ["تتر (USDT)", "دلار ($)"]:
                     needs_conversion = True
-                    # برای جفت‌ارز تتر به تومان، خودِ قیمت ورود همان نرخ است، در غیر این صورت نرخ دریافت می‌شود
                     default_rate = float(entry_p) if "تتر به تومان" in market_type else 100000.0
                     usdt_to_irt_rate = st.number_input("نرخ تبدیل تتر به تومان:", min_value=1.0, value=default_rate, step=500.0, key=f"conv_usdt_{trade_id_val}")
 
                 if price_distance > 0:
-                    # تطبیق ارزی سرمایه در ریسک با واحد قیمت
                     if "کریپتو" in market_type and wallet_currency == "تومان":
                         risk_in_market_currency = risk_wallet / usdt_to_irt_rate
                     elif ("تومان" in market_type or "طلا" in market_type) and wallet_currency in ["تتر (USDT)", "دلار ($)"]:
@@ -916,6 +919,24 @@ with tab1:
                     pos_size = risk_in_market_currency / price_distance
                     pos_value = pos_size * float(entry_p)
                     pos_value_unit = "تومان" if ("تومان" in market_type or "طلا" in market_type) else "تتر/دلار"
+
+            # فیلدهای جدید: لینک تصویر موقعیت و یادداشت‌های معامله
+            st.markdown("---")
+            col_img_pos, col_notes = st.columns(2)
+            with col_img_pos:
+                position_image_url = st.text_input(
+                    "🔗 لینک تصویر ورود / پوزیشن:",
+                    value=str(loaded_data.get("Link Tasvir Position", "")),
+                    placeholder="لینک چارت در زمان ورود یا اسکرین‌شات متاتریدر...",
+                    key=f"img_pos_{trade_id_val}"
+                )
+            with col_notes:
+                trade_notes = st.text_area(
+                    "📝 یادداشت‌ها و نکات ستاپ:",
+                    value=str(loaded_data.get("Yaddasht-ha", "")),
+                    placeholder="هر نکته‌ای در مورد مدیریت پوزیشن، احساسات، دلیل ورود یا سناریوی مدیریت...",
+                    key=f"notes_{trade_id_val}"
+                )
 
             # نمایش آنی نتایج و متریک‌ها
             st.markdown("---")
@@ -941,6 +962,8 @@ with tab1:
                     details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
                     details["Natijeh (PnL $)"] = ""
                     details["R:R Vaghei"] = ""
+                    details["Link Tasvir Position"] = position_image_url
+                    details["Yaddasht-ha"] = trade_notes
 
                     if upsert_trade(details):
                         st.session_state["current_trade_id"] = generate_trade_id()
