@@ -357,7 +357,7 @@ with tab1:
                 symbol = chosen_symbol_select
 
         with col_dir:
-            direction_options = ["🟢 خرید (Buy / Demand)", "🔴 فروش (Sell / Supply)"]
+            direction_options = ["-- انتخاب نشده --", "🟢 خرید (Buy / Demand)", "🔴 فروش (Sell / Supply)"]
             default_dir_idx = 0
             if loaded_data.get("Jahat (Buy/Sell)") in direction_options:
                 default_dir_idx = direction_options.index(loaded_data.get("Jahat (Buy/Sell)"))
