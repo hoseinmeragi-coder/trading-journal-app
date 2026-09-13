@@ -761,54 +761,65 @@ with tab1:
                         st.rerun()
 
   # ---------------------------------------------------------
-    # مدیریت حجم با انتخاب کاملاً دستی واحدهای سرمایه و حجم
+    # مدیریت پیشرفته حجم و ریسک (پشتیبانی کامل از فارکس، کریپتو، طلا و ارز مبنا)
     # ---------------------------------------------------------
     if can_proceed:
         with st.container(border=True):
             st.subheader("💰 محاسبه ریسک، حجم و مدیریت پوزیشن")
 
-            # انتخاب سیستم محاسباتی
-            calc_method = st.radio(
-                "روش محاسبه حجم:",
-                ["بر اساس قیمت ورود و استاپ (کریپتو، تتر/تومان، آبشده)", "بر اساس پیپ و لات (فارکس و طلا)"],
-                index=0,
-                horizontal=True,
-                key=f"calc_method_{trade_id_val}"
-            )
+            # ۱. انتخاب دستی بازار و واحدها
+            col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+            with col_cfg1:
+                market_type = st.selectbox(
+                    "بازار معاملاتی:",
+                    [
+                        "فارکس ماژور و طلا جهانی (Pip & Lot)",
+                        "کریپتو بر پایه تتر (BTC, ETH / USDT)",
+                        "تتر به تومان (USDT / IRT)",
+                        "طلای ۱۸ عیار و آبشده (Toman)",
+                        "فارکس کراس / معکوس (USDJPY, USDCHF, ...)"
+                    ],
+                    key=f"mkt_type_{trade_id_val}"
+                )
 
-            # ۱. انتخاب دستی واحد سرمایه/بالانس
-            # ۲. انتخاب دستی واحد حجم خروجی معامله
-            col_u1, col_u2 = st.columns(2)
-            with col_u1:
-                wallet_unit = st.selectbox(
-                    "واحد سرمایه و بالانس شما:",
+            with col_cfg2:
+                wallet_currency = st.selectbox(
+                    "واحد پولی حساب (کیف‌پول):",
                     ["تتر (USDT)", "تومان", "دلار ($)"],
-                    key=f"wallet_unit_{trade_id_val}"
+                    key=f"wallet_curr_{trade_id_val}"
                 )
 
-            with col_u2:
-                if calc_method == "بر اساس پیپ و لات (فارکس و طلا)":
-                    volume_target_unit = "Lot"
-                    st.selectbox("واحد حجم خروجی:", ["Lot"], disabled=True, key=f"target_unit_dis_{trade_id_val}")
+            with col_cfg3:
+                # تخصیص خودکار واحد حجم سفارش بر اساس بازار
+                if "فارکس" in market_type:
+                    target_vol_unit = "Lot"
+                elif "کریپتو" in market_type:
+                    target_vol_unit = f"واحد ({symbol if symbol else 'Coin'})"
+                elif "تتر به تومان" in market_type:
+                    target_vol_unit = "تتر (USDT)"
                 else:
-                    volume_target_unit = st.selectbox(
-                        "واحدی که می‌خواهید حجم به آن نمایش داده شود:",
-                        ["تتر (USDT)", "کوین / واحد ارز (BTC, ETH, ...)", "مثقال", "گرم"],
-                        key=f"target_unit_{trade_id_val}"
-                    )
+                    target_vol_unit = st.selectbox("واحد سفارش طلا:", ["گرم", "مثقال"], key=f"gold_u_{trade_id_val}")
+                
+                st.text_input("واحد حجم سفارش (خروجی):", value=target_vol_unit, disabled=True, key=f"disp_u_{trade_id_val}")
 
-            # بالانس و درصد ریسک
-            col_p1, col_p2 = st.columns(2)
-            with col_p1:
-                default_bal = 100.0 if "تومان" not in wallet_unit else 10000000.0
+            # ۲. دریافت بالانس و درصد ریسک
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                raw_balance = loaded_data.get("Balance", "")
+                try:
+                    default_b = float(raw_balance) if raw_balance != "" and pd.notna(raw_balance) else (100.0 if wallet_currency != "تومان" else 10000000.0)
+                except (ValueError, TypeError):
+                    default_b = 100.0 if wallet_currency != "تومان" else 10000000.0
+
                 balance = st.number_input(
-                    f"بالانس حساب ({wallet_unit}):",
+                    f"موجودی حساب ({wallet_currency}):",
                     min_value=0.01,
-                    value=default_bal,
-                    step=10.0 if "تومان" not in wallet_unit else 500000.0,
-                    key=f"bal_input_{trade_id_val}"
+                    value=default_b,
+                    step=10.0 if wallet_currency != "تومان" else 500000.0,
+                    key=f"bal_in_{trade_id_val}"
                 )
-            with col_p2:
+
+            with col_b2:
                 actual_risk_pct = st.number_input(
                     "درصد ریسک روی بالانس (%):",
                     min_value=0.01,
@@ -816,82 +827,116 @@ with tab1:
                     value=float(risk_pct) if risk_pct > 0 else 1.0,
                     step=0.1,
                     format="%.2f",
-                    key=f"risk_pct_input_{trade_id_val}"
+                    key=f"risk_in_{trade_id_val}"
                 )
 
-            risk_amount_wallet = float(balance) * (float(actual_risk_pct) / 100.0)
+            # مقدار سرمایه در ریسک بر مبنای کیف‌پول
+            risk_wallet = float(balance) * (float(actual_risk_pct) / 100.0)
             pos_size = 0.0
-            position_value = 0.0
+            pos_value = 0.0
+            pos_value_unit = wallet_currency
 
-            # شاخه اول: قیمت ورود و استاپ
-            if calc_method == "بر اساس قیمت ورود و استاپ (کریپتو، تتر/تومان، آبشده)":
-                col_e1, col_e2 = st.columns(2)
-                with col_e1:
-                    entry_price = st.number_input(
-                        "قیمت نقطه ورود (Entry):",
+            # ۳. شاخه اول: فارکس ماژور استاندارد
+            if market_type == "فارکس ماژور و طلا جهانی (Pip & Lot)":
+                col_fx1, col_fx2 = st.columns(2)
+                with col_fx1:
+                    sl_pips = st.number_input("فاصله تا حد ضرر (Pip / Point):", min_value=0.1, value=15.0, step=1.0, key=f"fx_sl_{trade_id_val}")
+                with col_fx2:
+                    pip_val = st.number_input(f"ارزش هر پیپ برای ۱ لات ({wallet_currency}):", min_value=0.01, value=10.0, step=0.5, key=f"fx_pv_{trade_id_val}")
+
+                if sl_pips > 0 and pip_val > 0:
+                    pos_size = risk_wallet / (float(sl_pips) * float(pip_val))
+                
+                pos_value = pos_size * 100000.0  # ۱ لات استاندارد ۱۰۰ هزار واحد ارز پایه
+                pos_value_unit = "ارز پایه (Notional)"
+
+            # شاخه دوم: فارکس کراس یا معکوس (مانند USDJPY با بالانس دلاری)
+            elif market_type == "فارکس کراس / معکوس (USDJPY, USDCHF, ...)":
+                col_cr1, col_cr2, col_cr3 = st.columns(3)
+                with col_cr1:
+                    sl_pips = st.number_input("فاصله تا حد ضرر (Pip):", min_value=0.1, value=20.0, step=1.0, key=f"cr_sl_{trade_id_val}")
+                with col_cr2:
+                    cross_rate = st.number_input("نرخ لحظه‌ای جفت‌ارز (جهت تبدیل پیپ):", min_value=0.0001, value=150.00, format="%.4f", key=f"cr_rate_{trade_id_val}")
+                with col_cr3:
+                    base_pip_standard = st.number_input("پیپ مبنای ارز مظنه (معمولاً ۱۰۰۰ برای ین، ۱۰ برای سایرین):", min_value=0.1, value=1000.0 if "JPY" in symbol.upper() else 10.0, key=f"cr_bp_{trade_id_val}")
+
+                effective_pip_value = (base_pip_standard / cross_rate) if cross_rate > 0 else 0.0
+                if sl_pips > 0 and effective_pip_value > 0:
+                    pos_size = risk_wallet / (float(sl_pips) * effective_pip_value)
+                pos_value = pos_size * 100000.0
+                pos_value_unit = "ارز پایه"
+
+            # شاخه سوم: بازارهای بر مبنای قیمت ورود و استاپ (کریپتو، تتر، طلا)
+            else:
+                col_p_e1, col_p_e2 = st.columns(2)
+                with col_p_e1:
+                    entry_p = st.number_input(
+                        "قیمت ورود (Entry):",
                         min_value=0.000001,
-                        value=100000.0 if "تومان" in wallet_unit or volume_target_unit == "تتر (USDT)" else 100.0,
+                        value=100000.0 if "تومان" in market_type or "تومان" in wallet_currency else 65000.0,
                         format="%.4f",
-                        key=f"entry_price_{trade_id_val}"
+                        key=f"pe_ent_{trade_id_val}"
                     )
-                with col_e2:
-                    sl_price = st.number_input(
+                with col_p_e2:
+                    sl_p = st.number_input(
                         "قیمت حد ضرر (Stop Loss):",
                         min_value=0.000001,
-                        value=90000.0 if "تومان" in wallet_unit or volume_target_unit == "تتر (USDT)" else 95.0,
+                        value=90000.0 if "تومان" in market_type or "تومان" in wallet_currency else 63500.0,
                         format="%.4f",
-                        key=f"sl_price_{trade_id_val}"
+                        key=f"pe_sl_{trade_id_val}"
                     )
 
-                price_diff = abs(float(entry_price) - float(sl_price))
+                price_distance = abs(float(entry_p) - float(sl_p))
 
-                if price_diff > 0:
-                    # تطبیق هوشمند تفاوت واحد بالانس با واحد قیمت ورودی
-                    # سناریو: بالانس تتر، خروجی تتر، اما قیمت‌ها به تومان وارد شده است
-                    if wallet_unit in ["تتر (USDT)", "دلار ($)"] and volume_target_unit == "تتر (USDT)" and float(entry_price) > 5000:
-                        # ریسک تتری به تومان تبدیل می‌شود:
-                        risk_in_price_currency = risk_amount_wallet * float(entry_price)
-                        pos_size = risk_in_price_currency / price_diff
+                # فیلد نرخ تبدیل در صورت ناهمخوانی واحد بالانس با قیمت معامله
+                usdt_to_irt_rate = 1.0
+                needs_conversion = False
+                
+                # حالت الف: معامله تتری/کریپتویی است ولی بالانس شما تومان است
+                if "کریپتو" in market_type and wallet_currency == "تومان":
+                    needs_conversion = True
+                    usdt_to_irt_rate = st.number_input("نرخ روز تبدیل تتر به تومان:", min_value=1.0, value=100000.0, step=500.0, key=f"conv_irt_{trade_id_val}")
+                
+                # حالت ب: معامله تومانی (طلا یا تتر/تومان) است ولی بالانس شما تتر/دلار است
+                elif ("تومان" in market_type or "طلا" in market_type) and wallet_currency in ["تتر (USDT)", "دلار ($)"]:
+                    needs_conversion = True
+                    # برای جفت‌ارز تتر به تومان، خودِ قیمت ورود همان نرخ است، در غیر این صورت نرخ دریافت می‌شود
+                    default_rate = float(entry_p) if "تتر به تومان" in market_type else 100000.0
+                    usdt_to_irt_rate = st.number_input("نرخ تبدیل تتر به تومان:", min_value=1.0, value=default_rate, step=500.0, key=f"conv_usdt_{trade_id_val}")
+
+                if price_distance > 0:
+                    # تطبیق ارزی سرمایه در ریسک با واحد قیمت
+                    if "کریپتو" in market_type and wallet_currency == "تومان":
+                        risk_in_market_currency = risk_wallet / usdt_to_irt_rate
+                    elif ("تومان" in market_type or "طلا" in market_type) and wallet_currency in ["تتر (USDT)", "دلار ($)"]:
+                        risk_in_market_currency = risk_wallet * usdt_to_irt_rate
                     else:
-                        pos_size = risk_amount_wallet / price_diff
+                        risk_in_market_currency = risk_wallet
 
-                    position_value = pos_size * float(entry_price)
+                    pos_size = risk_in_market_currency / price_distance
+                    pos_value = pos_size * float(entry_p)
+                    pos_value_unit = "تومان" if ("تومان" in market_type or "طلا" in market_type) else "تتر/دلار"
 
-                st.markdown("---")
-                col_m_lot, col_m_val, col_m_risk = st.columns(3)
-                col_m_lot.metric("حجم مجاز ورود", f"{pos_size:,.4f} {volume_target_unit}")
-                col_m_val.metric("ارزش کل موقعیت", f"{position_value:,.2f}")
-                col_m_risk.metric("سرمایه در ریسک", f"{risk_amount_wallet:,.2f} {wallet_unit} ({actual_risk_pct}%)")
+            # نمایش آنی نتایج و متریک‌ها
+            st.markdown("---")
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("حجم سفارش جهت ورود", f"{pos_size:,.4f} {target_vol_unit}")
+            col_m2.metric("ارزش کل موقعیت", f"{pos_value:,.2f} {pos_value_unit}")
+            col_m3.metric("سرمایه در ریسک", f"{risk_wallet:,.2f} {wallet_currency} ({actual_risk_pct}%)")
 
-            # شاخه دوم: پیپ و لات فارکس
-            else:
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip / Point):", min_value=0.1, value=10.0, step=1.0, key=f"sl_pips_{trade_id_val}")
-                with col_f2:
-                    pip_val = st.number_input(f"ارزش هر پیپ برای ۱ لات ({wallet_unit}):", min_value=0.01, value=10.0, step=0.5, key=f"pip_val_{trade_id_val}")
-
-                pip_risk_total = float(sl_pips) * float(pip_val)
-                if pip_risk_total > 0:
-                    pos_size = risk_amount_wallet / pip_risk_total
-
-                st.markdown("---")
-                col_m_lot, col_m_risk = st.columns(2)
-                col_m_lot.metric("حجم مجاز معامله", f"{pos_size:.2f} Lot")
-                col_m_risk.metric("سرمایه در ریسک", f"{risk_amount_wallet:,.2f} {wallet_unit} ({actual_risk_pct}%)")
-
+            # دکمه ثبت پوزیشن
             submit_trade = st.button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True, key=f"btn_open_{trade_id_val}")
 
             if submit_trade:
                 if not symbol:
-                    st.error("❌ نماد معامله را مشخص کنید.")
+                    st.error("❌ ابتدا نماد معامله را در بالای صفحه مشخص کنید.")
                 else:
-                    details["Balance"] = f"{balance} {wallet_unit}"
+                    details["Balance"] = f"{balance} {wallet_currency}"
                     details["Emtiyaze 3 Marhale"] = total_score_3m
                     details["Grade"] = grade
                     details["Darsade Risk"] = f"{actual_risk_pct}%"
-                    details["Risk ($)"] = f"{round(risk_amount_wallet, 2)} {wallet_unit}"
-                    details["Hajm (Lot)"] = f"{round(pos_size, 4)} {volume_target_unit}"
+                    details["Risk ($)"] = f"{round(risk_wallet, 2)} {wallet_currency}"
+                    details["Hajm (Lot)"] = f"{round(pos_size, 4)} {target_vol_unit}"
                     details["Vaziyat"] = "Baz (Open)"
                     details["Noe TP / Khorooj"] = "Dar Intizar Khorooj"
                     details["Natijeh (PnL $)"] = ""
