@@ -363,7 +363,6 @@ with tab1:
                 default_dir_idx = direction_options.index(loaded_data.get("Jahat (Buy/Sell)"))
             trade_direction = st.selectbox("جهت معامله روی ناحیه:", direction_options, index=default_dir_idx, key=f"dir_{trade_id_val}")
 
-        # فیلد لینک تصویر بخش تحلیل
         analysis_image_url = st.text_input(
             "🔗 لینک تصویر تحلیل چارت:",
             value=str(loaded_data.get("Link Tasvir Tahlil", "")),
@@ -535,7 +534,6 @@ with tab1:
                     ffvg_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("FVG واضح و پرنشده وجود دارد", 5), "2": ("FVG وجود ندارد یا پر شده", 1)}
                     ffvg_sel = st.selectbox("۱.۶. وضعیت FVG در محدوده فلیپ؟", list(ffvg_opts.keys()), index=get_index_by_val(ffvg_opts, loaded_data.get("1.6 Vaziyaate FVG Flip")), format_func=lambda x: ffvg_opts[x][0], key=f"ffvg_{trade_id_val}")
                     score_m1 += ffvg_opts[ffvg_sel][1]
-                    details["1.6 Vaziyaate FVG Flip"] = ffvg_opts[field] if (field := "1.6 Vaziyaate FVG Flip") in loaded_data else ffvg_opts[ffvg_sel][0]
                     details["1.6 Vaziyaate FVG Flip"] = ffvg_opts[ffvg_sel][0]
 
             elif scenario_code == "CANDLE_OB":
@@ -777,7 +775,6 @@ with tab1:
         with st.container(border=True):
             st.subheader("💰 محاسبه ریسک، حجم و مدیریت پوزیشن")
 
-            # ۱. انتخاب دستی بازار و واحدها
             col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
             with col_cfg1:
                 market_type = st.selectbox(
@@ -811,7 +808,6 @@ with tab1:
                 
                 st.text_input("واحد حجم سفارش (خروجی):", value=target_vol_unit, disabled=True, key=f"disp_u_{trade_id_val}")
 
-            # ۲. دریافت بالانس و درصد ریسک
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 raw_balance = loaded_data.get("Balance", "")
@@ -839,13 +835,11 @@ with tab1:
                     key=f"risk_in_{trade_id_val}"
                 )
 
-            # مقدار سرمایه در ریسک بر مبنای کیف‌پول
             risk_wallet = float(balance) * (float(actual_risk_pct) / 100.0)
             pos_size = 0.0
             pos_value = 0.0
             pos_value_unit = wallet_currency
 
-            # ۳. شاخه اول: فارکس ماژور استاندارد
             if market_type == "فارکس ماژور و طلا جهانی (Pip & Lot)":
                 col_fx1, col_fx2 = st.columns(2)
                 with col_fx1:
@@ -859,7 +853,6 @@ with tab1:
                 pos_value = pos_size * 100000.0
                 pos_value_unit = "ارز پایه (Notional)"
 
-            # شاخه دوم: فارکس کراس یا معکوس
             elif market_type == "فارکس کراس / معکوس (USDJPY, USDCHF, ...)":
                 col_cr1, col_cr2, col_cr3 = st.columns(3)
                 with col_cr1:
@@ -875,7 +868,6 @@ with tab1:
                 pos_value = pos_size * 100000.0
                 pos_value_unit = "ارز پایه"
 
-            # شاخه سوم: کریپتو، تتر، طلا
             else:
                 col_p_e1, col_p_e2 = st.columns(2)
                 with col_p_e1:
@@ -921,14 +913,12 @@ with tab1:
                     pos_value = pos_size * float(entry_p)
                     pos_value_unit = "تومان" if ("تومان" in market_type or "طلا" in market_type) else "تتر/دلار"
 
-            # نمایش آنی نتایج و متریک‌ها
             st.markdown("---")
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("حجم سفارش جهت ورود", f"{pos_size:,.4f} {target_vol_unit}")
             col_m2.metric("ارزش کل موقعیت", f"{pos_value:,.2f} {pos_value_unit}")
             col_m3.metric("سرمایه در ریسک", f"{risk_wallet:,.2f} {wallet_currency} ({actual_risk_pct}%)")
 
-            # دکمه ثبت پوزیشن
             submit_trade = st.button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True, key=f"btn_open_{trade_id_val}")
 
             if submit_trade:
@@ -976,7 +966,49 @@ with tab2:
                 selected_trade_data = open_trades[open_trades["Trade ID"] == target_trade_id].iloc[0].to_dict()
 
             with st.container(border=True):
-                # فیلدهای لینک تصویر ورود و یادداشت‌ها داخل بخش مدیریت پوزیشن
+                # فیلدهای جدید: قیمت ورود و ساعت ورود به پوزیشن
+                col_entry_p, col_entry_t = st.columns(2)
+                with col_entry_p:
+                    saved_pos_entry_price = selected_trade_data.get("Gheymat Vorood Position", "")
+                    try:
+                        default_pos_p = float(saved_pos_entry_price) if saved_pos_entry_price and pd.notna(saved_pos_entry_price) else 0.0
+                    except (ValueError, TypeError):
+                        default_pos_p = 0.0
+                    pos_entry_price_val = st.number_input(
+                        "💵 قیمت ورود به پوزیشن (Entry Price):",
+                        min_value=0.0,
+                        value=default_pos_p,
+                        step=0.0001,
+                        format="%.4f",
+                        key=f"mng_ep_{target_trade_id}"
+                    )
+
+                with col_entry_t:
+                    saved_pos_entry_time = selected_trade_data.get("Saate Vorood Position", "")
+                    default_time_obj = datetime.datetime.now().time()
+                    if saved_pos_entry_time and pd.notna(saved_pos_entry_time):
+                        try:
+                            default_time_obj = datetime.datetime.strptime(str(saved_pos_entry_time), "%H:%M").time()
+                        except Exception:
+                            pass
+                    entry_time_choices = [
+                        datetime.time(h, m)
+                        for h in range(24)
+                        for m in range(0, 60, 5)
+                    ]
+                    time_key_clean = default_time_obj.replace(second=0, microsecond=0)
+                    if time_key_clean not in entry_time_choices:
+                        entry_time_choices.append(time_key_clean)
+                        entry_time_choices = sorted(entry_time_choices)
+                    default_t_idx2 = entry_time_choices.index(time_key_clean)
+                    pos_entry_time_val = st.selectbox(
+                        "⏰ ساعت ورود به پوزیشن (Entry Time):",
+                        options=entry_time_choices,
+                        index=default_t_idx2,
+                        format_func=lambda t: t.strftime("%H:%M"),
+                        key=f"mng_et_{target_trade_id}"
+                    )
+
                 col_exit_img, col_exit_notes = st.columns(2)
                 with col_exit_img:
                     pos_img_val = st.text_input(
@@ -1000,6 +1032,8 @@ with tab2:
 
                 if status_code == "CANCELED":
                     if st.button("ثبت لغو معامله", use_container_width=True):
+                        selected_trade_data["Gheymat Vorood Position"] = str(pos_entry_price_val)
+                        selected_trade_data["Saate Vorood Position"] = pos_entry_time_val.strftime("%H:%M")
                         selected_trade_data["Link Tasvir Position"] = pos_img_val
                         selected_trade_data["Yaddasht-ha"] = pos_notes_val
                         selected_trade_data["Vaziyat"] = "Laghv-shode (Canceled/Missed)"
@@ -1028,6 +1062,8 @@ with tab2:
 
                         save_close = st.form_submit_button("💾 ثبت نهایی خروج معامله", use_container_width=True)
                         if save_close:
+                            selected_trade_data["Gheymat Vorood Position"] = str(pos_entry_price_val)
+                            selected_trade_data["Saate Vorood Position"] = pos_entry_time_val.strftime("%H:%M")
                             selected_trade_data["Link Tasvir Position"] = pos_img_val
                             selected_trade_data["Yaddasht-ha"] = pos_notes_val
                             selected_trade_data["Vaziyat"] = "Baste-shode (Closed)"
