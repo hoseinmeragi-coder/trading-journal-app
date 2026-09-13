@@ -285,7 +285,16 @@ with tab1:
                 }
                 draft_options = ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys())
                 
-                if st.session_state.get("draft_selector") not in draft_options:
+                # تطبیق ایمن پیش‌نویس انتخابی در صورت بازگشت از پوزیشن
+                target_label_to_select = None
+                for lbl, tid in draft_dict.items():
+                    if tid == st.session_state.get("current_trade_id"):
+                        target_label_to_select = lbl
+                        break
+                
+                if target_label_to_select:
+                    st.session_state["draft_selector"] = target_label_to_select
+                elif st.session_state.get("draft_selector") not in draft_options:
                     st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
 
                 col_sel_draft, col_del_draft = st.columns([4, 1])
@@ -970,18 +979,15 @@ with tab2:
                 with col_back_btn:
                     st.write("")
                     st.write("")
-                    # بازگرداندن معامله به بخش اول (پیش‌نویس و ادیت آنالیز)
                     if st.button("↩️ بازگشت به آنالیز (ادیت)", use_container_width=True, help="برگرداندن معامله به تب اول جهت ویرایش پارامترهای تحلیل"):
                         selected_trade_data["Vaziyat"] = "Pishnevis (Draft)"
                         selected_trade_data["Noe TP / Khorooj"] = "Dar Hale Tahlil"
                         if upsert_trade(selected_trade_data):
                             st.session_state["current_trade_id"] = target_trade_id
-                            st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
                             st.success(f"پوزیشن {target_trade_id} به تب اول منتقل شد.")
                             st.rerun()
 
             with st.container(border=True):
-                # فیلدهای قیمت ورود و ساعت ورود به پوزیشن
                 col_entry_p, col_entry_t = st.columns(2)
                 with col_entry_p:
                     saved_pos_entry_price = selected_trade_data.get("Gheymat Vorood Position", "")
@@ -1099,7 +1105,6 @@ with tab3:
     if df.empty or "Vaziyat" not in df.columns:
         st.info("هنوز دیتایی برای تحلیل ثبت نشده است.")
     else:
-        # ابزار بازگردانی معاملات بسته یا لغوشده به تب مدیریت پوزیشن (بخش دوم)
         non_open_trades = df[df["Vaziyat"].isin(["Baste-shode (Closed)", "Laghv-shode (Canceled/Missed)"])].copy()
         if not non_open_trades.empty:
             with st.expander("🔄 بازگردانی معامله بسته‌شده / لغوشده به بخش مدیریت پوزیشن جهت ادیت"):
