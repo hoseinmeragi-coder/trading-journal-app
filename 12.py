@@ -761,37 +761,36 @@ with tab1:
                         st.rerun()
 
   # ---------------------------------------------------------
-    # مدیریت حجم و ثبت معامله باز (انتخاب کاملاً دستی واحدها)
+    # مدیریت حجم و ثبت معامله باز (نسخه اصلاح‌شده و دقیق)
     # ---------------------------------------------------------
     if can_proceed:
         with st.container(border=True):
             st.subheader("💰 محاسبه ریسک، حجم و مدیریت پوزیشن")
 
-            # ۱. انتخاب دستی سیستم محاسبه
-            calc_method = st.radio(
-                "روش محاسبه حجم:",
-                ["بر اساس قیمت ورود و استاپ (کریپتو، تتر/تومان، آبشده)", "بر اساس پیپ و لات (فارکس و طلا)"],
-                horizontal=True,
-                key=f"calc_method_{trade_id_val}"
-            )
-
-            # ۲. انتخاب دستی واحد پولی بالانس و ریسک
-            currency_unit = st.selectbox(
-                "واحد پولی حساب (بالانس و ریسک):",
-                ["دلار ($)", "تومان", "تتر (USDT)", "سایر"],
-                index=0,
-                key=f"cur_unit_{trade_id_val}"
-            )
+            col_top1, col_top2 = st.columns(2)
+            with col_top1:
+                calc_method = st.radio(
+                    "روش محاسبه حجم:",
+                    ["بر اساس قیمت ورود و استاپ (کریپتو، تتر/تومان، آبشده)", "بر اساس پیپ و لات (فارکس و طلا)"],
+                    horizontal=True,
+                    key=f"calc_method_{trade_id_val}"
+                )
+            with col_top2:
+                currency_unit = st.selectbox(
+                    "واحد پولی حساب (بالانس و ریسک):",
+                    ["دلار ($)", "تومان", "تتر (USDT)", "سایر"],
+                    index=0,
+                    key=f"cur_unit_{trade_id_val}"
+                )
 
             raw_balance = loaded_data.get("Balance", "")
             try:
-                saved_balance = float(raw_balance) if raw_balance != "" and pd.notna(raw_balance) else (10000.0 if "تومان" not in currency_unit else 100000000.0)
+                saved_balance = float(raw_balance) if raw_balance != "" and pd.notna(raw_balance) else (5000.0 if "تومان" not in currency_unit else 100000000.0)
             except (ValueError, TypeError):
-                saved_balance = 10000.0
+                saved_balance = 5000.0
 
-            with st.form("trade_execution_form"):
-                col_p1, col_p2, col_p3 = st.columns(3)
-
+            with st.form(f"trade_execution_form_{trade_id_val}"):
+                col_p1, col_p2 = st.columns(2)
                 with col_p1:
                     balance = st.number_input(
                         f"بالانس حساب ({currency_unit}):",
@@ -799,46 +798,62 @@ with tab1:
                         value=saved_balance,
                         step=100.0 if "تومان" not in currency_unit else 1000000.0
                     )
+                with col_p2:
+                    # امکان ویرایش مستقیم درصد ریسک توسط کاربر
+                    actual_risk_pct = st.number_input(
+                        "درصد ریسک روی بالانس (%):",
+                        min_value=0.01,
+                        max_value=100.0,
+                        value=float(risk_pct) if risk_pct > 0 else 1.0,
+                        step=0.1,
+                        format="%.2f"
+                    )
 
-                risk_amount = balance * (risk_pct / 100)
+                # محاسبه قطعی مقدار ریسک پولی
+                risk_amount = balance * (actual_risk_pct / 100.0)
                 pos_size = 0.0
                 volume_unit = ""
 
-                # حالت اول: محاسبه مستقیم بر اساس فاصله قیمت ورود و استاپ
+                # حالت ۱: ورود و استاپ عددی (کریپتو / تتر / طلا آبشده)
                 if calc_method == "بر اساس قیمت ورود و استاپ (کریپتو، تتر/تومان، آبشده)":
-                    with col_p2:
+                    col_e1, col_e2, col_e3 = st.columns(3)
+                    with col_e1:
                         entry_price = st.number_input("قیمت ورود (Entry):", min_value=0.000001, value=100.0, format="%.4f")
-                    with col_p3:
+                    with col_e2:
                         sl_price = st.number_input("قیمت حد ضرر (Stop Loss):", min_value=0.000001, value=95.0, format="%.4f")
-
-                    col_u1, col_u2 = st.columns(2)
-                    with col_u1:
+                    with col_e3:
                         volume_unit = st.selectbox(
-                            "واحد حجم نهایی خروجی:",
+                            "واحد حجم خروجی:",
                             ["واحد / کوین (BTC, ETH, ...)", "تتر (USDT)", "مثقال", "گرم", "سهم"],
                             key=f"vol_unit_{trade_id_val}"
                         )
 
                     price_diff = abs(entry_price - sl_price)
-                    pos_size = (risk_amount / price_diff) if price_diff > 0 and risk_pct > 0 else 0.0
+                    if price_diff > 0:
+                        pos_size = risk_amount / price_diff
 
+                    st.markdown("---")
                     col_m_lot, col_m_risk = st.columns(2)
                     col_m_lot.metric("حجم مجاز ورود", f"{pos_size:,.4f} {volume_unit}")
-                    col_m_risk.metric("سرمایه در ریسک", f"{risk_amount:,.2f} {currency_unit}")
+                    col_m_risk.metric("سرمایه در ریسک", f"{risk_amount:,.2f} {currency_unit} ({actual_risk_pct}%)")
 
-                # حالت دوم: محاسبه سنتی پیپ و لات فارکس
+                # حالت ۲: پیپ و لات (فارکس)
                 else:
-                    with col_p2:
-                        sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip / Point):", min_value=0.1, value=15.0, step=1.0)
-                    with col_p3:
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        sl_pips = st.number_input("فاصله تا استاپ‌لاس (Pip / Point):", min_value=0.1, value=10.0, step=1.0)
+                    with col_f2:
                         pip_val = st.number_input(f"ارزش هر پیپ برای ۱ لات ({currency_unit}):", min_value=0.01, value=10.0, step=0.5)
 
                     volume_unit = "Lot"
-                    pos_size = (risk_amount / (sl_pips * pip_val)) if sl_pips > 0 and pip_val > 0 and risk_pct > 0 else 0.0
+                    pip_risk_total = sl_pips * pip_val
+                    if pip_risk_total > 0:
+                        pos_size = risk_amount / pip_risk_total
 
+                    st.markdown("---")
                     col_m_lot, col_m_risk = st.columns(2)
-                    col_m_lot.metric("حجم مجاز معامله", f"{round(pos_size, 2)} {volume_unit}")
-                    col_m_risk.metric("سرمایه در ریسک", f"{risk_amount:,.2f} {currency_unit}")
+                    col_m_lot.metric("حجم مجاز معامله", f"{pos_size:.2f} {volume_unit}")
+                    col_m_risk.metric("سرمایه در ریسک", f"{risk_amount:,.2f} {currency_unit} ({actual_risk_pct}%)")
 
                 submit_trade = st.form_submit_button("🚀 ثبت قطعی و ورود به معامله (Open Trade)", use_container_width=True)
 
@@ -849,7 +864,7 @@ with tab1:
                         details["Balance"] = f"{balance} {currency_unit}"
                         details["Emtiyaze 3 Marhale"] = total_score_3m
                         details["Grade"] = grade
-                        details["Darsade Risk"] = f"{risk_pct}%"
+                        details["Darsade Risk"] = f"{actual_risk_pct}%"
                         details["Risk ($)"] = f"{round(risk_amount, 2)} {currency_unit}"
                         details["Hajm (Lot)"] = f"{round(pos_size, 4)} {volume_unit}"
                         details["Vaziyat"] = "Baz (Open)"
