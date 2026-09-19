@@ -768,6 +768,68 @@ with tab1:
                 can_proceed = False
 
     # ---------------------------------------------------------
+    # چک‌لیست روانشناسی پیش از ورود (Pre-Trade Psychology Gate)
+    # ---------------------------------------------------------
+    with st.container(border=True):
+        st.subheader("🧠 چک‌لیست روانشناسی و انضباط فردی پیش از ورود")
+        st.caption("ارزیابی سلامت تصمیم‌گیری، مهار ترید انتقامی و اطمینان از پذیرش کامل ریسک")
+
+        col_psy1, col_psy2 = st.columns(2)
+        with col_psy1:
+            mental_state_opts = {
+                "0": "-- انتخاب نشده --",
+                "1": "🟢 آرام، هوشیار و متمرکز (Peak State)",
+                "2": "🟡 کمی خسته یا حواس‌پرت (Tired/Distracted)",
+                "3": "🔴 عصبانی / در فکر انتقام از ضرر قبلی (Revenge Mode)",
+                "4": "🔥 بیش‌ازحد هیجان‌زده و مغرور از بردهای قبلی (Overconfident)"
+            }
+            psy_mental_sel = st.selectbox(
+                "حالت ذهنی و فیزیولوژیک شما هم‌اکنون:",
+                options=list(mental_state_opts.keys()),
+                index=get_index_by_val(mental_state_opts, loaded_data.get("Psy_Mental_State")),
+                format_func=lambda x: mental_state_opts[x],
+                key=f"psy_mental_{trade_id_val}"
+            )
+            details["Psy_Mental_State"] = mental_state_opts[psy_mental_sel]
+
+            fomo_check_opts = {
+                "0": "-- انتخاب نشده --",
+                "1": "✅ خیر، ورود طبق پلن و در زون از پیش تعیین‌شده است",
+                "2": "⚠️ بله، احساس ترس از جا ماندن (FOMO) دارم",
+                "3": "⚠️ معامله ناشی از سیگنال کانال یا توصیه دیگران است"
+            }
+            psy_fomo_sel = st.selectbox(
+                "آیا این معامله ناشی از ترس از جا ماندن (FOMO) است؟",
+                options=list(fomo_check_opts.keys()),
+                index=get_index_by_val(fomo_check_opts, loaded_data.get("Psy_FOMO_Check")),
+                format_func=lambda x: fomo_check_opts[x],
+                key=f"psy_fomo_{trade_id_val}"
+            )
+            details["Psy_FOMO_Check"] = fomo_check_opts[psy_fomo_sel]
+
+        with col_psy2:
+            psy_disc_score = st.slider(
+                "امتیاز انضباط و پایبندی به روتین معاملاتی (۱ تا ۵):",
+                min_value=1,
+                max_value=5,
+                value=int(loaded_data.get("Psy_Discipline_Score", 5)) if str(loaded_data.get("Psy_Discipline_Score", "")).isdigit() else 5,
+                help="۵ یعنی صبر کامل تا تشکیل تمام الگوها؛ ۱ یعنی ورود با عجله و نقض قوانین.",
+                key=f"psy_disc_{trade_id_val}"
+            )
+            details["Psy_Discipline_Score"] = str(psy_disc_score)
+
+            saved_risk_accepted = str(loaded_data.get("Psy_Risk_Accepted", "")).lower() in ["true", "بله", "1"]
+            psy_risk_accepted = st.checkbox(
+                "🛡️ حد ضرر دلاری این معامله را به طور ۱۰۰٪ از قبل پذیرفته‌ام و با فعال‌شدن آن آرام خواهم بود.",
+                value=saved_risk_accepted,
+                key=f"psy_risk_{trade_id_val}"
+            )
+            details["Psy_Risk_Accepted"] = "بله" if psy_risk_accepted else "خیر"
+
+        if psy_mental_sel in ["3", "4"]:
+            st.warning("⚠️ هشدار روانشناسی: ورود در شرایط روانی انتقام‌جویی یا سرخوشی مفرط بیشترین آسیب را به اکانت وارد می‌کند. به شدت توصیه می‌شود پوزیشن نگیرید.")
+
+    # ---------------------------------------------------------
     # ثبت پیش‌نویس
     # ---------------------------------------------------------
     with st.container(border=True):
@@ -1066,6 +1128,34 @@ with tab2:
                         key=f"mng_notes_{target_trade_id}"
                     )
 
+                # ---------------------------------------------------------
+                # بخش روانشناسی در حین معامله و خروج
+                # ---------------------------------------------------------
+                st.markdown("---")
+                st.markdown("##### 🧠 روانشناسی مدیریت پوزیشن و فرآیند خروج")
+                col_in_psy1, col_in_psy2 = st.columns(2)
+                with col_in_psy1:
+                    exit_reason_opts = {
+                        "1": "🎯 طبق قوانین پلن معاملاتی و تارگت تکنیکال",
+                        "2": "😨 ترس از دست رفتن سود شناور (خروج زودهنگام هیجانی)",
+                        "3": "🛑 جابه‌جایی حد ضرر و نقض مدیریت ریسک",
+                        "4": "🥱 خستگی ناشی از معطلی زیاد چارت و بی‌حوصلگی"
+                    }
+                    psy_exit_choice = st.selectbox(
+                        "کیفیت روانی خروج از پوزیشن:",
+                        options=list(exit_reason_opts.keys()),
+                        format_func=lambda x: exit_reason_opts[x],
+                        key=f"psy_exit_reason_{target_trade_id}"
+                    )
+
+                with col_in_psy2:
+                    psy_stress_level = st.select_slider(
+                        "سطح استرس تجربه شده حین باز بودن معامله:",
+                        options=["بسیار آرام (Set & Forget)", "متوسط و قابل کنترل", "استرس بالا و چشم‌دوختن مداوم به چارت", "اضطراب شدید و تنش"],
+                        value="بسیار آرام (Set & Forget)",
+                        key=f"psy_stress_{target_trade_id}"
+                    )
+
                 st.markdown("---")
                 status_opts = {"1": ("بسته‌شده با نتیجه مشخص (Closed Trade)", "CLOSED"), "2": ("لغوشده / نرسیده به نقطه ورود (Canceled)", "CANCELED")}
                 status_sel = st.radio("وضعیت خروج معامله:", list(status_opts.keys()), format_func=lambda x: status_opts[x][0])
@@ -1077,6 +1167,8 @@ with tab2:
                         selected_trade_data["Saate Vorood Position"] = pos_entry_time_val.strftime("%H:%M")
                         selected_trade_data["Link Tasvir Position"] = pos_img_val
                         selected_trade_data["Yaddasht-ha"] = pos_notes_val
+                        selected_trade_data["Psy_Exit_Execution"] = exit_reason_opts[psy_exit_choice]
+                        selected_trade_data["Psy_InTrade_Stress"] = psy_stress_level
                         selected_trade_data["Vaziyat"] = "Laghv-shode (Canceled/Missed)"
                         selected_trade_data["Noe TP / Khorooj"] = "Nareside be Entry"
                         selected_trade_data["Natijeh (PnL $)"] = "0.0"
@@ -1107,6 +1199,8 @@ with tab2:
                             selected_trade_data["Saate Vorood Position"] = pos_entry_time_val.strftime("%H:%M")
                             selected_trade_data["Link Tasvir Position"] = pos_img_val
                             selected_trade_data["Yaddasht-ha"] = pos_notes_val
+                            selected_trade_data["Psy_Exit_Execution"] = exit_reason_opts[psy_exit_choice]
+                            selected_trade_data["Psy_InTrade_Stress"] = psy_stress_level
                             selected_trade_data["Vaziyat"] = "Baste-shode (Closed)"
                             selected_trade_data["Noe TP / Khorooj"] = exit_opts[exit_sel][0]
                             selected_trade_data["Natijeh (PnL $)"] = str(pnl_val)
@@ -1257,6 +1351,56 @@ with tab3:
                     margin=dict(l=40, r=20, t=50, b=60),
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
+
+            # ---------------------------------------------------------
+            # تحلیل و همبستگی روانشناسی و عملکرد در داشبورد
+            # ---------------------------------------------------------
+            if "Psy_Mental_State" in closed_trades.columns or "Psy_Exit_Execution" in closed_trades.columns:
+                with st.container(border=True):
+                    st.markdown("##### 🧠 تحلیل آماری روانشناسی و انضباط فردی")
+                    p_col1, p_col2 = st.columns(2)
+
+                    with p_col1:
+                        if "Psy_Mental_State" in closed_trades.columns:
+                            mental_pnl = closed_trades.groupby("Psy_Mental_State")["Natijeh (PnL $)"].sum().reset_index()
+                            fig_mental = px.bar(
+                                mental_pnl,
+                                x="Psy_Mental_State",
+                                y="Natijeh (PnL $)",
+                                title="مجموع سود/زیان بر اساس وضعیت ذهنی ورود",
+                                color="Natijeh (PnL $)",
+                                color_continuous_scale=["#ef4444", "#10b981"]
+                            )
+                            fig_mental.update_layout(
+                                paper_bgcolor="#0e1117",
+                                plot_bgcolor="#0e1117",
+                                font={'color': '#8b949e'},
+                                xaxis=dict(title="", tickangle=-20),
+                                yaxis=dict(title="سود/زیان ($)"),
+                                height=280,
+                                margin=dict(l=40, r=20, t=50, b=40),
+                            )
+                            st.plotly_chart(fig_mental, use_container_width=True)
+
+                    with p_col2:
+                        if "Psy_Exit_Execution" in closed_trades.columns:
+                            exit_counts = closed_trades["Psy_Exit_Execution"].value_counts().reset_index()
+                            exit_counts.columns = ["دلیل خروج", "تعداد"]
+                            fig_pie = px.pie(
+                                exit_counts,
+                                names="دلیل خروج",
+                                values="تعداد",
+                                title="توزیع علل روانی خروج از معاملات",
+                                hole=0.4
+                            )
+                            fig_pie.update_layout(
+                                paper_bgcolor="#0e1117",
+                                plot_bgcolor="#0e1117",
+                                font={'color': '#8b949e'},
+                                height=280,
+                                margin=dict(l=20, r=20, t=50, b=20),
+                            )
+                            st.plotly_chart(fig_pie, use_container_width=True)
 
             with st.container(border=True):
                 st.markdown("##### 📑 تاریخچه کامل داده‌ها")
