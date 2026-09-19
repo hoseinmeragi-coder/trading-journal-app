@@ -285,24 +285,26 @@ with tab1:
                 }
                 draft_options = ["-- ایجاد تحلیل جدید --"] + list(draft_dict.keys())
                 
-                # تطبیق ایمن پیش‌نویس انتخابی در صورت بازگشت از پوزیشن
-                target_label_to_select = None
-                for lbl, tid in draft_dict.items():
-                    if tid == st.session_state.get("current_trade_id"):
-                        target_label_to_select = lbl
-                        break
-                
-                if target_label_to_select:
-                    st.session_state["draft_selector"] = target_label_to_select
-                elif st.session_state.get("draft_selector") not in draft_options:
-                    st.session_state["draft_selector"] = "-- ایجاد تحلیل جدید --"
+                # تابع واکنش به تغییر سلکت‌باکس
+                def on_draft_change():
+                    sel = st.session_state.get("draft_selector")
+                    if sel and sel != "-- ایجاد تحلیل جدید --":
+                        st.session_state["current_trade_id"] = draft_dict[sel]
+                    else:
+                        st.session_state["current_trade_id"] = generate_trade_id()
+
+                # بررسی هماهنگی کلید انتخابی در وضعیت‌های خاص
+                if "draft_selector" not in st.session_state or st.session_state["draft_selector"] not in draft_options:
+                    matched_lbl = next((lbl for lbl, tid in draft_dict.items() if tid == st.session_state.get("current_trade_id")), "-- ایجاد تحلیل جدید --")
+                    st.session_state["draft_selector"] = matched_lbl
 
                 col_sel_draft, col_del_draft = st.columns([4, 1])
                 with col_sel_draft:
                     selected_draft_label = st.selectbox(
                         "انتخاب پیش‌نویس جهت بارگذاری و ادامه:",
                         draft_options,
-                        key="draft_selector"
+                        key="draft_selector",
+                        on_change=on_draft_change
                     )
                 
                 with col_del_draft:
@@ -323,10 +325,6 @@ with tab1:
                     if not matched_rows.empty:
                         loaded_data = matched_rows.iloc[0].to_dict()
                         st.session_state["current_trade_id"] = chosen_id
-                else:
-                    if st.session_state.get("current_trade_id") in draft_dict.values():
-                        st.session_state["current_trade_id"] = generate_trade_id()
-                        st.rerun()
 
     trade_id_val = st.session_state["current_trade_id"]
 
