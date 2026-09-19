@@ -222,6 +222,25 @@ with tab1:
     st.markdown("### 🎯 آنالیز پیشرفته زون و ستاپ معاملاتی (استاندارد ۱۰۰ امتیازی)")
     st.caption("بررسی چک‌لیست چندزمانه ورود، مدیریت ریسک و ارزیابی اعتبار")
 
+    # نمایش کادر شکیل شناسه یکتا پس از ثبت موفق معامله برای کپی در چارت
+    if "last_registered_trade_id" in st.session_state:
+        saved_id = st.session_state["last_registered_trade_id"]
+        with st.container(border=True):
+            st.markdown(
+                f"""
+                <div style="background: rgba(16, 185, 129, 0.12); border: 1.5px solid #10b981; border-radius: 10px; padding: 14px; text-align: center;">
+                    <div style="font-size: 1.05rem; font-weight: 600; color: #34d399; margin-bottom: 6px;">
+                        🎯 معامله با موفقیت ثبت شد! شناسه یکتا جهت ثبت در چارت:
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.code(saved_id, language="text")
+            if st.button("✖️ بستن پیام", key="dismiss_registered_id"):
+                del st.session_state["last_registered_trade_id"]
+                st.rerun()
+
     if "current_trade_id" not in st.session_state:
         st.session_state["current_trade_id"] = generate_trade_id()
 
@@ -536,7 +555,7 @@ with tab1:
                     fsweep_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("⚡ بله، قبل از شکست سوئیپ داشته", 5), "2": ("خیر", 1)}
                     fsweep_sel = st.selectbox("۱.۵. سوئیپ نقدینگی در گذشته این سطح؟", list(fsweep_opts.keys()), index=get_index_by_val(fsweep_opts, loaded_data.get("1.5 Sweep Naghdinegi Sath")), format_func=lambda x: fsweep_opts[x][0], key=f"fswp_{trade_id_val}")
                     score_m1 += fsweep_opts[fsweep_sel][1]
-                    details["1.5 Sweep Naghdinegi Sath"] = fsweep_opts[fsweep_sel][0]
+                    details["1.5 Sweep Naghdinegi Sath"] = fsweep_opts[frem_sel][0]
 
                     ffvg_opts = {"0": ("-- انتخاب نشده --", 0), "1": ("FVG واضح و پرنشده وجود دارد", 5), "2": ("FVG وجود ندارد یا پر شده", 1)}
                     ffvg_sel = st.selectbox("۱.۶. وضعیت FVG در محدوده فلیپ؟", list(ffvg_opts.keys()), index=get_index_by_val(ffvg_opts, loaded_data.get("1.6 Vaziyaate FVG Flip")), format_func=lambda x: ffvg_opts[x][0], key=f"ffvg_{trade_id_val}")
@@ -770,6 +789,7 @@ with tab1:
                     details["R:R Vaghei"] = ""
 
                     if upsert_trade(details):
+                        st.session_state["last_registered_trade_id"] = trade_id_val
                         st.session_state["current_trade_id"] = generate_trade_id()
                         st.session_state["reset_to_new"] = True
                         st.success(f"پیش‌نویس {trade_id_val} با موفقیت ذخیره شد.")
@@ -944,6 +964,8 @@ with tab1:
                     details["R:R Vaghei"] = ""
 
                     if upsert_trade(details):
+                        # ذخیره شناسه یکتا برای نمایش در کادر کپی شکیل بالای صفحه
+                        st.session_state["last_registered_trade_id"] = trade_id_val
                         st.session_state["current_trade_id"] = generate_trade_id()
                         st.session_state["reset_to_new"] = True
                         st.success(f"پوزیشن {trade_id_val} با موفقیت ثبت شد.")
